@@ -1,15 +1,12 @@
 import streamlit as st
 import os
-import git
 import subprocess
 import re
 from streamlit_mermaid import st_mermaid
-import shutil
 import signal
 import queue
 import threading
 import time
-import random
 import streamlit_shadcn_ui as ui
 import logging
 
@@ -17,7 +14,7 @@ import logging
 
 st.set_page_config(
     page_title="PILOT",  # This is the browser tab title
-    page_icon="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCA4MCA4MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8Y2lyY2xlIGN4PSI0MCIgY3k9IjQwIiByPSIzNSIgZmlsbD0iIzNiODJmNiIgb3BhY2l0eT0iMC44Ii8+CiAgPGNpcmNsZSBjeD0iNDAiIGN5PSI0MCIgcj0iMjUiIGZpbGw9IiMxMGI5ODEiIG9wYWNpdHk9IjAuNyIvPgogIDxjaXJjbGUgY3g9IjQwIiBjeT0iNDAiIHI9IjgiIGZpbGw9IiNmZmZmZmYiLz4KICA8Y2lyY2xlIGN4PSI0MCIgY3k9IjIwIiByPSIzIiBmaWxsPSIjZjU5ZTBiIi8+CiAgPGNpcmNsZSBjeD0iNjAiIGN5PSI0MCIgcj0iMyIgZmlsbD0iI2Y1OWUwYiIvPgogIDxjaXJjbGUgY3g9IjQwIiBjeT0iNjAiIHI9IjMiIGZpbGw9IiNmNTllMGIiLz4KICA8Y2lyY2xlIGN4PSIyMCIgY3k9IjQwIiByPSIzIiBmaWxsPSIjZjU5ZTBiIi8+Cjwvc3ZnPgo=",
+    page_icon="",  # Empty icon for simplicity
     layout="centered"                  # Optional: 'centered' or 'wide'
 )
 
