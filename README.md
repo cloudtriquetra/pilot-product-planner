@@ -54,7 +54,7 @@ product-planner/
 
 2. **Install dependencies**
    ```bash
-   pip install streamlit streamlit-mermaid streamlit-shadcn-ui
+   pip install -r requirements.txt
    ```
 
 3. **Configure Claude AI CLI**

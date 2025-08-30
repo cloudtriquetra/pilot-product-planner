@@ -9,7 +9,9 @@ import threading
 import time
 import streamlit_shadcn_ui as ui
 import logging
-
+from azure.devops.connection import Connection
+from msrest.authentication import BasicAuthentication
+from ado import parse_story, generate_ado_story
 
 
 st.set_page_config(
@@ -194,7 +196,7 @@ if st.session_state.get('selected_usecase'):
 # --- Tabs ---
 tab_options = ["Product Use Case"]
 if st.session_state.get('selected_usecase'):
-    tab_options.extend(["Product Planning", "Results"])
+    tab_options.extend(["Product Planning", "Results", "Azure DevOps"])
 
 # Determine default tab
 if st.session_state.get('command_is_running'):
@@ -297,7 +299,6 @@ if selected_tab == "Product Use Case":
 
     else:
         st.warning("The 'workspace' directory does not exist.")
-
 
 elif selected_tab == "Product Planning":
     selected_usecase = st.session_state.get('selected_usecase')
@@ -466,5 +467,219 @@ elif selected_tab == "Results":
 
                 except Exception as e:
                     st.error(f"Error reading markdown file: {e}")
+    else:
+        st.info("Please select a use case first.")
+
+elif selected_tab == "Azure DevOps":
+    st.header("Create User Stories in Azure DevOps")
+    selected_usecase = st.session_state.get('selected_usecase')
+
+    if selected_usecase:
+        usecase_path = os.path.join("../workspace", selected_usecase)
+
+        # ADO Configuration in sidebar
+        with st.sidebar:
+            st.markdown("### 📤 Azure DevOps Settings")
+
+            # Store ADO settings in session state
+            if 'ado_settings' not in st.session_state:
+                st.session_state.ado_settings = {
+                    'organization': '',
+                    'project': '',
+                    'pat': '',
+                    'area_path': 'Product Planner',
+                    'iteration': 'Sprint 1'
+                }
+
+            # ADO Configuration
+            organization = st.text_input(
+                "Organization",
+                value=st.session_state.ado_settings['organization'],
+                help="Your Azure DevOps organization name"
+            )
+            project = st.text_input(
+                "Project",
+                value=st.session_state.ado_settings['project'],
+                help="Your project name"
+            )
+            pat = st.text_input(
+                "PAT",
+                value=st.session_state.ado_settings['pat'],
+                type="password",
+                help="Personal Access Token with Work Items permissions"
+            )
+            area_path = st.text_input(
+                "Area Path",
+                value=st.session_state.ado_settings['area_path']
+            )
+            iteration = st.text_input(
+                "Iteration",
+                value=st.session_state.ado_settings['iteration']
+            )
+
+            # Save settings
+            st.session_state.ado_settings.update({
+                'organization': organization,
+                'project': project,
+                'pat': pat,
+                'area_path': area_path,
+                'iteration': iteration
+            })
+
+        # Main content area
+        # if organization and project and pat:
+        try:
+            fr_file = os.path.join(usecase_path, "ra-fr.md")
+            nfr_file = os.path.join(usecase_path, "ra-nfr.md")
+
+            stories_data = {}
+
+            # Read and parse FR stories
+            if os.path.exists(fr_file):
+                with open(fr_file, 'r') as f:
+                    content = f.read()
+                    stories_match = re.search(r'## 2\. User Stories\n\n(.*?)(?=\n##|\Z)', content, re.DOTALL)
+                    if stories_match:
+                        stories = re.findall(r'\*\*US-\d+:\*\*(.*?)(?=\*\*US-|\Z)', stories_match.group(1), re.DOTALL)
+                        for idx, story in enumerate(stories, 1):
+                            parsed = parse_story(story.strip(), "FR")
+                            if parsed:
+                                stories_data[f"FR-{idx}"] = parsed
+
+            # Read and parse NFR stories
+            if os.path.exists(nfr_file):
+                with open(nfr_file, 'r') as f:
+                    content = f.read()
+                    stories_match = re.search(r'## 2\. Quality User Stories\n\n(.*?)(?=\n##|\Z)', content, re.DOTALL)
+                    if stories_match:
+                        stories = re.findall(r'\*\*QUS-\d+:\*\*(.*?)(?=\*\*QUS-|\Z|\n\n##)', stories_match.group(1), re.DOTALL)
+                        for idx, story in enumerate(stories, 1):
+                            print(idx, story)
+                            parsed = parse_story(story.strip(), "NFR")
+                            if parsed:
+                                stories_data[f"NFR-{idx}"] = parsed
+
+            if stories_data:
+                st.success(f"Found {len(stories_data)} stories to upload")
+
+                # Add story editing section
+                st.markdown("### 📝 Edit Stories")
+                for story_id, story in stories_data.items():
+                    with st.expander(f"{story_id}: {story['i_want'][:100]}..."):
+                        # Create columns for better layout
+                        col1, col2 = st.columns([2, 1])
+
+                        with col1:
+                            story['i_want'] = st.text_area(
+                                "I want to",
+                                value=story['i_want'],
+                                key=f"want_{story_id}"
+                            )
+                            story['as_a'] = st.text_input(
+                                "As a",
+                                value=story['as_a'],
+                                key=f"as_a_{story_id}"
+                            )
+                            story['so_that'] = st.text_area(
+                                "So that",
+                                value=story['so_that'],
+                                key=f"so_that_{story_id}"
+                            )
+
+                        with col2:
+                            story['points'] = st.number_input(
+                                "Story Points",
+                                min_value=1,
+                                max_value=13,
+                                value=int(story['points']),
+                                key=f"points_{story_id}"
+                            )
+                            story['priority'] = st.selectbox(
+                                "Priority",
+                                ["Critical", "High", "Medium", "Low"],
+                                index=["Critical", "High", "Medium", "Low"].index(story['priority']),
+                                key=f"priority_{story_id}"
+                            )
+                            story['tags'] = st.text_input(
+                                "Tags",
+                                value=story['tags'],
+                                key=f"tags_{story_id}"
+                            )
+
+                        # Acceptance Criteria
+                        st.markdown("#### Acceptance Criteria")
+                        if 'ac_list' not in story:
+                            story['ac_list'] = []
+
+                        ac_count = st.number_input(
+                            "Number of Acceptance Criteria",
+                            min_value=1,
+                            max_value=10,
+                            value=len(story.get('ac_list', [])) or 1,
+                            key=f"ac_count_{story_id}"
+                        )
+
+                        new_ac_list = []
+                        for i in range(ac_count):
+                            ac_value = story['ac_list'][i] if i < len(story['ac_list']) else ""
+                            ac = st.text_input(
+                                f"Acceptance Criteria {i+1}",
+                                value=ac_value,
+                                key=f"ac_{story_id}_{i}"
+                            )
+                            if ac:
+                                new_ac_list.append(ac)
+                        story['ac_list'] = new_ac_list
+
+                if st.button("🚀 Upload Stories to Azure DevOps", type="primary", use_container_width=True):
+                    with st.spinner("Uploading stories to Azure DevOps..."):
+                        # Initialize ADO connection
+                        credentials = BasicAuthentication('', pat)
+                        organization_url = f"https://dev.azure.com/{organization}"
+                        connection = Connection(base_url=organization_url, creds=credentials)
+                        wit_client = connection.clients.get_work_item_tracking_client()
+
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+
+                        for idx, (story_id, story) in enumerate(stories_data.items(), 1):
+                            status_text.text(f"Creating story {idx}/{len(stories_data)}...")
+
+                            # Create work item
+                            wit_create = [
+                                {"op": "add", "path": "/fields/System.Title",
+                                    "value": f"{story_id}: {story['i_want'][:100]}"},
+                                {"op": "add", "path": "/fields/System.Description",
+                                    "value": f"As a {story['as_a']}\nI want to {story['i_want']}\nSo that {story['so_that']}"},
+                                {"op": "add", "path": "/fields/Microsoft.VSTS.Common.AcceptanceCriteria",
+                                    "value": "\n".join([f"- [ ] {ac}" for ac in story.get('ac_list', [])])},
+                                {"op": "add", "path": "/fields/Microsoft.VSTS.Scheduling.StoryPoints",
+                                    "value": story['points']},
+                                {"op": "add", "path": "/fields/System.AreaPath",
+                                    "value": f"{project}\\{area_path}"},
+                                {"op": "add", "path": "/fields/System.IterationPath",
+                                    "value": f"{project}\\{iteration}"},
+                                {"op": "add", "path": "/fields/System.Tags",
+                                    "value": story['tags']}
+                            ]
+
+                            created_item = wit_client.create_work_item(
+                                document=wit_create,
+                                project=project,
+                                type='User Story'
+                            )
+
+                            progress = int((idx / len(stories_data)) * 100)
+                            progress_bar.progress(progress)
+
+                        status_text.text("✅ All stories uploaded successfully!")
+                        st.success(f"Created {len(stories_data)} user stories in Azure DevOps")
+            else:
+                st.warning("No stories found in the requirements files.")
+
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+        # else:
+        #     st.info("Please fill in all Azure DevOps settings in the sidebar to continue.")
     else:
         st.info("Please select a use case first.")
