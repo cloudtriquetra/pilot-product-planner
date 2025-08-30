@@ -554,7 +554,6 @@ elif selected_tab == "Azure DevOps":
                     if stories_match:
                         stories = re.findall(r'\*\*QUS-\d+:\*\*(.*?)(?=\*\*QUS-|\Z|\n\n##)', stories_match.group(1), re.DOTALL)
                         for idx, story in enumerate(stories, 1):
-                            print(idx, story)
                             parsed = parse_story(story.strip(), "NFR")
                             if parsed:
                                 stories_data[f"NFR-{idx}"] = parsed
