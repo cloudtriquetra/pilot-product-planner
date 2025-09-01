@@ -1,3 +1,5 @@
 .env
 .streamlit
 __pycache__
+workspace/
+.DS_Store
