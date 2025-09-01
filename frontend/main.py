@@ -739,15 +739,15 @@ elif selected_tab == "Azure DevOps":
                         col1, col2 = st.columns([2, 1])
 
                         with col1:
-                            story['i_want'] = st.text_area(
-                                "I want to",
-                                value=story['i_want'],
-                                key=f"want_{story_id}"
-                            )
                             story['as_a'] = st.text_input(
                                 "As a",
                                 value=story['as_a'],
                                 key=f"as_a_{story_id}"
+                            )
+                            story['i_want'] = st.text_area(
+                                "I want to",
+                                value=story['i_want'],
+                                key=f"want_{story_id}"
                             )
                             story['so_that'] = st.text_area(
                                 "So that",

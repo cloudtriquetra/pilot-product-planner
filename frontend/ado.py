@@ -5,18 +5,18 @@ def parse_story(story_text, story_type="FR"):
     # Define patterns based on story type
     if story_type == "FR":
         story_pattern = re.compile(
-            r'As a (.*?), I want to (.*?), so that (.*?)\.'  # Story narrative
-            r'\s*- Story Points: (\d+)\s*'                    # Story points
-            r'- Priority: (.*?)\s*'                           # Priority
-            r'- Tags: (.*?)$',                               # Tags
+            r'As a (.*?), I want to (.*?), so that (.*?)\.'     # Story narrative
+            r'\s*-\s*(?:\*\*)?Story Points(?:\*\*)?: (\d+)\s*'  # Story points with optional bold
+            r'-\s*(?:\*\*)?Priority(?:\*\*)?: (.*?)\s*'         # Priority with optional bold
+            r'-\s*(?:\*\*)?Tags(?:\*\*)?: (.*?)$',              # Tags with optional bold
             re.DOTALL
         )
     else:  # QUS/NFR pattern
         story_pattern = re.compile(
-            r'As a (.*?), I need (.*?), so that (.*?)\.'     # NFR narrative
-            r'\s*- Story Points: (\d+)\s*'                    # Story points
-            r'- Priority: (.*?)\s*'                           # Priority
-            r'- Tags: (.*?)$',                               # Tags
+            r'As a (.*?), I need (.*?), so that (.*?)\.'        # NFR narrative
+            r'\s*-\s*(?:\*\*)?Story Points(?:\*\*)?: (\d+)\s*'  # Story points with optional bold
+            r'-\s*(?:\*\*)?Priority(?:\*\*)?: (.*?)\s*'         # Priority with optional bold
+            r'-\s*(?:\*\*)?Tags(?:\*\*)?: (.*?)$',              # Tags with optional bold
             re.DOTALL
         )
 
