@@ -9,7 +9,9 @@ import threading
 import time
 import streamlit_shadcn_ui as ui
 import logging
-
+from azure.devops.connection import Connection
+from msrest.authentication import BasicAuthentication
+from ado import parse_story, generate_ado_story
 
 
 st.set_page_config(
@@ -194,7 +196,7 @@ if st.session_state.get('selected_usecase'):
 # --- Tabs ---
 tab_options = ["Product Use Case"]
 if st.session_state.get('selected_usecase'):
-    tab_options.extend(["Product Planning", "Results"])
+    tab_options.extend(["Product Planning", "Results", "Azure DevOps"])
 
 # Determine default tab
 if st.session_state.get('command_is_running'):
@@ -288,8 +290,53 @@ if selected_tab == "Product Use Case":
                 try:
                     with open(usecase_md_path, 'r', encoding='utf-8') as f:
                         usecase_content = f.read()
+                    
+                    # Check if we're in edit mode for this use case
+                    edit_key = f"edit_mode_{st.session_state.get('selected_usecase')}"
+                    
                     with st.expander("📋 Use Case Description", expanded=True):
-                        st.markdown(usecase_content)
+                        col1, col2 = st.columns([4, 1])
+                        
+                        with col2:
+                            if not st.session_state.get(edit_key, False):
+                                if st.button("✏️ Edit", key=f"edit_btn_{st.session_state.get('selected_usecase')}", use_container_width=True):
+                                    st.session_state[edit_key] = True
+                                    st.rerun()
+                        
+                        with col1:
+                            if st.session_state.get(edit_key, False):
+                                # Extract current name and description
+                                lines = usecase_content.split('\n')
+                                current_name = lines[0].replace('# ', '') if lines else st.session_state.get('selected_usecase')
+                                current_description = '\n'.join(lines[2:]) if len(lines) > 2 else ""
+                                
+                                with st.form(f"edit_usecase_form_{st.session_state.get('selected_usecase')}"):
+                                    updated_name = st.text_input("Use case name", value=current_name)
+                                    updated_description = st.text_area("Description", value=current_description, height=150)
+                                    
+                                    col_save, col_cancel = st.columns(2)
+                                    with col_save:
+                                        save_btn = st.form_submit_button("💾 Save", type="primary")
+                                    with col_cancel:
+                                        cancel_btn = st.form_submit_button("❌ Cancel")
+                                    
+                                    if save_btn:
+                                        if updated_name.strip() and updated_description.strip():
+                                            # Save the updated content
+                                            with open(usecase_md_path, 'w', encoding='utf-8') as f:
+                                                f.write(f"# {updated_name}\n\n{updated_description}\n")
+                                            st.session_state[edit_key] = False
+                                            st.session_state.use_case_saved_message = "Use case updated successfully!"
+                                            st.rerun()
+                                        else:
+                                            st.warning("Please provide both name and description.")
+                                    
+                                    if cancel_btn:
+                                        st.session_state[edit_key] = False
+                                        st.rerun()
+                            else:
+                                st.markdown(usecase_content)
+                                
                 except FileNotFoundError:
                     st.info("Use case description not found.")
                 except Exception as e:
@@ -297,7 +344,6 @@ if selected_tab == "Product Use Case":
 
     else:
         st.warning("The 'workspace' directory does not exist.")
-
 
 elif selected_tab == "Product Planning":
     selected_usecase = st.session_state.get('selected_usecase')
@@ -350,15 +396,49 @@ elif selected_tab == "Product Planning":
                     with col:
                         st.link_button("View Documentation", url=f"http://localhost:{usecase_port}", use_container_width=True)
 
-                if run_button and selected_command_name:
+                # Check for "Generate New Version" button click (independent of run_button)
+                generate_new_version = False
+                if selected_command_name:
+                    command_to_run, output_file = command_map[selected_command_name]
+                    if output_file:
+                        report_file_path = os.path.join(usecase_path, output_file)
+                        if os.path.exists(report_file_path):
+                            if st.button("🔄 Generate New Version", type="primary", key=f"regenerate_{selected_command_name}"):
+                                generate_new_version = True
+
+                # Handle both regular generation and new version generation
+                if (run_button and selected_command_name) or generate_new_version:
                     command_to_run, output_file = command_map[selected_command_name]
 
                     should_run_command = True
                     if output_file:
                         report_file_path = os.path.join(usecase_path, output_file)
                         if os.path.exists(report_file_path):
-                            st.info(f"Report '{output_file}' already exists for this use case. Generating new artifact is not required.")
-                            should_run_command = False
+                            if not generate_new_version:
+                                # Show warning only for regular generate button
+                                st.warning(f"⚠️ Report '{output_file}' already exists for this use case.")
+                                st.info("💡 **Tip**: Generating again will create a new version while preserving the existing report. View reports in the **Results** tab.")
+                                should_run_command = False
+                            else:
+                                # Handle versioning for "Generate New Version" button
+                                import datetime
+                                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                base_name = output_file.replace('.md', '')
+                                versioned_name = f"{base_name}_v{timestamp}.md"
+                                versioned_path = os.path.join(usecase_path, versioned_name)
+                                
+                                try:
+                                    # Move existing report to versioned name
+                                    import shutil
+                                    shutil.move(report_file_path, versioned_path)
+                                    st.success(f"✅ Existing report backed up as '{versioned_name}'. Generating new version...")
+                                    should_run_command = True
+                                except Exception as e:
+                                    st.error(f"❌ Failed to backup existing report: {e}")
+                                    should_run_command = False
+                        else:
+                            # No existing report, proceed normally
+                            should_run_command = True
                     
                     if should_run_command:
                         logging.info(f"Starting generating artifact: {selected_command_name} on use case: {selected_usecase}")
@@ -431,25 +511,116 @@ elif selected_tab == "Results":
         st.header("View Generated Reports")
         
         allowed_md_files = ["ra-fr.md", "ra-nfr.md", "ra-diagrams.md", "ra-sdd.md"]
-
         report_names = ["Functional Requirements", "Non-Functional Requirements", "Architecture Diagrams", "System Design Document"]
 
         # Create mapping between report names and filenames
         file_to_report_map = dict(zip(allowed_md_files, report_names))
         report_to_file_map = dict(zip(report_names, allowed_md_files))
         
-        md_files = [f for f in os.listdir(usecase_path) if f in allowed_md_files]
+        # Get all markdown files including versioned ones
+        all_files = os.listdir(usecase_path)
+        current_reports = [f for f in all_files if f in allowed_md_files]
         
-        if not md_files:
+        # Find versioned reports
+        versioned_reports = {}
+        for base_file in allowed_md_files:
+            base_name = base_file.replace('.md', '')
+            versions = [f for f in all_files if f.startswith(f"{base_name}_v") and f.endswith('.md')]
+            if versions:
+                # Sort versions by timestamp (newest first)
+                versions.sort(reverse=True)
+                versioned_reports[base_file] = versions
+        
+        if not current_reports and not versioned_reports:
             st.info("No designated markdown files found in the root of this use case.")
         else:
-            # Get available report names for files that actually exist
-            available_report_names = [file_to_report_map[f] for f in md_files]
+            # Create report selection options
+            available_report_names = []
+            if current_reports:
+                available_report_names.extend([file_to_report_map[f] for f in current_reports])
             
-            selected_report_name = st.selectbox("Select a report to view", available_report_names)
+            selected_report_name = st.selectbox("Select a report type to view", available_report_names)
+            
             if selected_report_name:
-                # Map the selected report name back to the actual filename
                 selected_md_file = report_to_file_map[selected_report_name]
+                
+                # Show version selection if versioned reports exist
+                if selected_md_file in versioned_reports:
+                    # Initialize session state for version selection
+                    version_key = f"version_select_{selected_md_file}_{st.session_state.selected_usecase}"
+                    if version_key not in st.session_state:
+                        st.session_state[version_key] = "Current Version"
+                    
+                    # Prominent section header
+                    st.markdown("## 📋 Version Selection")
+                    
+                    version_options = ["Current Version"] + [f"Version {v.split('_v')[1].replace('.md', '')}" for v in versioned_reports[selected_md_file]]
+                    
+                    selected_version = st.selectbox(
+                        "Select version to view",
+                        version_options,
+                        index=version_options.index(st.session_state[version_key]) if st.session_state[version_key] in version_options else 0,
+                        key=f"version_selector_{selected_md_file}"
+                    )
+                    # Update session state
+                    st.session_state[version_key] = selected_version
+                    
+                    # Show version info
+                    if selected_version == "Current Version":
+                        st.info(f"📄 Viewing current version: **{selected_md_file}**")
+                    else:
+                        st.info(f"📄 Viewing archived version: **{selected_version}**")
+                    
+                    if selected_version != "Current Version":
+                        # Extract timestamp and find corresponding file
+                        version_timestamp = selected_version.replace("Version ", "")
+                        version_file = f"{selected_md_file.replace('.md', '')}_v{version_timestamp}.md"
+                        selected_md_file = version_file
+                        
+                        col_info, col_rollback = st.columns([2, 1])
+                        with col_info:
+                            timestamp = version_file.split("_v")[1].replace(".md", "")
+                            formatted_time = f"{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:8]} {timestamp[9:11]}:{timestamp[11:13]}:{timestamp[13:15]}"
+                            st.info(f"� Generated on: {formatted_time}")
+                        with col_rollback:
+                            if st.button("🔄 Restore as Current", key=f"rollback_{version_file}", type="primary"):
+                                try:
+                                    # Get paths
+                                    base_file = selected_md_file.split('_v')[0] + '.md'
+                                    current_file_path = os.path.join(usecase_path, base_file)
+                                    version_file_path = os.path.join(usecase_path, version_file)
+                                    
+                                    # Create backup of current version before rollback
+                                    import datetime
+                                    import shutil
+                                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    backup_name = f"{base_file.replace('.md', '')}_v{timestamp}.md"
+                                    backup_path = os.path.join(usecase_path, backup_name)
+                                    
+                                    # Move current to backup
+                                    if os.path.exists(current_file_path):
+                                        shutil.move(current_file_path, backup_path)
+                                    
+                                    # Copy selected version to current
+                                    shutil.copy2(version_file_path, current_file_path)
+                                    
+                                    st.success(f"✅ **Rollback successful!** \n- Current version backed up as `{backup_name}` \n- `{version_file}` is now the current version")
+                                    st.info("💡 **Tip**: The current version has been updated. You can now generate new artifacts based on this version.")
+                                    
+                                    # Reset version selection to current
+                                    st.session_state[version_key] = "Current Version"
+                                    
+                                    # Wait a moment then rerun to refresh the view
+                                    import time
+                                    time.sleep(1)
+                                    st.rerun()
+                                    
+                                except Exception as e:
+                                    st.error(f"❌ Failed to restore version: {e}")
+                else:
+                    st.info(f"📄 Viewing current version: **{selected_md_file}**")
+                
+                # Display the selected report
                 md_path = os.path.join(usecase_path, selected_md_file)
                 try:
                     with open(md_path, 'r', encoding='utf-8') as f:
@@ -466,5 +637,221 @@ elif selected_tab == "Results":
 
                 except Exception as e:
                     st.error(f"Error reading markdown file: {e}")
+    else:
+        st.info("Please select a use case first.")
+
+elif selected_tab == "Azure DevOps":
+    st.header("Create User Stories in Azure DevOps")
+    selected_usecase = st.session_state.get('selected_usecase')
+
+    if selected_usecase:
+        usecase_path = os.path.join("../workspace", selected_usecase)
+
+        # ADO Configuration in sidebar
+        with st.sidebar:
+            st.markdown("### 📤 Azure DevOps Settings")
+
+            # Store ADO settings in session state
+            if 'ado_settings' not in st.session_state:
+                st.session_state.ado_settings = {
+                    'organization': '',
+                    'project': '',
+                    'pat': '',
+                    'area_path': 'Product Planner',
+                    'iteration': 'Sprint 1'
+                }
+
+            # ADO Configuration
+            organization = st.text_input(
+                "Organization",
+                value=st.session_state.ado_settings['organization'],
+                help="Your Azure DevOps organization name"
+            )
+            project = st.text_input(
+                "Project",
+                value=st.session_state.ado_settings['project'],
+                help="Your project name"
+            )
+            pat = st.text_input(
+                "PAT",
+                value=st.session_state.ado_settings['pat'],
+                type="password",
+                help="Personal Access Token with Work Items permissions"
+            )
+            # area_path = st.text_input(
+            #     "Area Path",
+            #     value=st.session_state.ado_settings['area_path']
+            # )
+            area_path = ""
+            iteration = st.text_input(
+                "Iteration",
+                value=st.session_state.ado_settings['iteration']
+            )
+
+            # Save settings
+            st.session_state.ado_settings.update({
+                'organization': organization,
+                'project': project,
+                'pat': pat,
+                'area_path': area_path,
+                'iteration': iteration
+            })
+
+        # Main content area
+        # if organization and project and pat:
+        try:
+            fr_file = os.path.join(usecase_path, "ra-fr.md")
+            nfr_file = os.path.join(usecase_path, "ra-nfr.md")
+
+            stories_data = {}
+
+            # Read and parse FR stories
+            if os.path.exists(fr_file):
+                with open(fr_file, 'r') as f:
+                    content = f.read()
+                    stories_match = re.search(r'## 2\. User Stories\n\n(.*?)(?=\n##|\Z)', content, re.DOTALL)
+                    if stories_match:
+                        stories = re.findall(r'\*\*US-\d+:\*\*(.*?)(?=\*\*US-|\Z)', stories_match.group(1), re.DOTALL)
+                        for idx, story in enumerate(stories, 1):
+                            parsed = parse_story(story.strip(), "FR")
+                            if parsed:
+                                stories_data[f"FR-{idx}"] = parsed
+
+            # Read and parse NFR stories
+            if os.path.exists(nfr_file):
+                with open(nfr_file, 'r') as f:
+                    content = f.read()
+                    stories_match = re.search(r'## 2\. Quality User Stories\n\n(.*?)(?=\n##|\Z)', content, re.DOTALL)
+                    if stories_match:
+                        stories = re.findall(r'\*\*QUS-\d+:\*\*(.*?)(?=\*\*QUS-|\Z|\n\n##)', stories_match.group(1), re.DOTALL)
+                        for idx, story in enumerate(stories, 1):
+                            parsed = parse_story(story.strip(), "NFR")
+                            if parsed:
+                                stories_data[f"NFR-{idx}"] = parsed
+
+            if stories_data:
+                st.success(f"Found {len(stories_data)} stories to upload")
+
+                # Add story editing section
+                st.markdown("### 📝 Edit Stories")
+                for story_id, story in stories_data.items():
+                    with st.expander(f"{story_id}: {story['i_want'][:100]}..."):
+                        # Create columns for better layout
+                        col1, col2 = st.columns([2, 1])
+
+                        with col1:
+                            story['as_a'] = st.text_input(
+                                "As a",
+                                value=story['as_a'],
+                                key=f"as_a_{story_id}"
+                            )
+                            story['i_want'] = st.text_area(
+                                "I want to",
+                                value=story['i_want'],
+                                key=f"want_{story_id}"
+                            )
+                            story['so_that'] = st.text_area(
+                                "So that",
+                                value=story['so_that'],
+                                key=f"so_that_{story_id}"
+                            )
+
+                        with col2:
+                            story['points'] = st.number_input(
+                                "Story Points",
+                                min_value=1,
+                                max_value=13,
+                                value=int(story['points']),
+                                key=f"points_{story_id}"
+                            )
+                            story['priority'] = st.selectbox(
+                                "Priority",
+                                ["Critical", "High", "Medium", "Low"],
+                                index=["Critical", "High", "Medium", "Low"].index(story['priority']),
+                                key=f"priority_{story_id}"
+                            )
+                            story['tags'] = st.text_input(
+                                "Tags",
+                                value=story['tags'],
+                                key=f"tags_{story_id}"
+                            )
+
+                        # Acceptance Criteria
+                        st.markdown("#### Acceptance Criteria")
+                        if 'ac_list' not in story:
+                            story['ac_list'] = []
+
+                        ac_count = st.number_input(
+                            "Number of Acceptance Criteria",
+                            min_value=1,
+                            max_value=10,
+                            value=len(story.get('ac_list', [])) or 1,
+                            key=f"ac_count_{story_id}"
+                        )
+
+                        new_ac_list = []
+                        for i in range(ac_count):
+                            ac_value = story['ac_list'][i] if i < len(story['ac_list']) else ""
+                            ac = st.text_input(
+                                f"Acceptance Criteria {i+1}",
+                                value=ac_value,
+                                key=f"ac_{story_id}_{i}"
+                            )
+                            if ac:
+                                new_ac_list.append(ac)
+                        story['ac_list'] = new_ac_list
+
+                if st.button("🚀 Upload Stories to Azure DevOps", type="primary", use_container_width=True):
+                    with st.spinner("Uploading stories to Azure DevOps..."):
+                        # Initialize ADO connection
+                        credentials = BasicAuthentication('', pat)
+                        organization_url = f"https://dev.azure.com/{organization}"
+                        connection = Connection(base_url=organization_url, creds=credentials)
+                        wit_client = connection.clients.get_work_item_tracking_client()
+
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+
+                        for idx, (story_id, story) in enumerate(stories_data.items(), 1):
+                            status_text.text(f"Creating story {idx}/{len(stories_data)}...")
+
+                            # Create work item
+                            wit_create = [
+                                {"op": "add", "path": "/fields/System.Title",
+                                    "value": f"{story_id}: {story['i_want'][:100]}"},
+                                {"op": "add", "path": "/fields/System.Description",
+                                    "value": f"As a {story['as_a']}\nI want to {story['i_want']}\nSo that {story['so_that']}"},
+                                {"op": "add", "path": "/fields/Microsoft.VSTS.Common.AcceptanceCriteria",
+                                    "value": "\n".join([f"- [ ] {ac}" for ac in story.get('ac_list', [])])},
+                                {"op": "add", "path": "/fields/Microsoft.VSTS.Scheduling.StoryPoints",
+                                    "value": story['points']},
+                                {"op": "add", "path": "/fields/System.AreaPath",
+                                "value": area_path if '\\' in area_path else project},  # Use project as default if no path specified
+                                # {"op": "add", "path": "/fields/System.AreaPath",
+                                #     "value": f"{project}\\{area_path}"},
+                                {"op": "add", "path": "/fields/System.IterationPath",
+                                    "value": f"{project}\\{iteration}"},
+                                {"op": "add", "path": "/fields/System.Tags",
+                                    "value": story['tags']}
+                            ]
+
+                            created_item = wit_client.create_work_item(
+                                document=wit_create,
+                                project=project,
+                                type='User Story'
+                            )
+
+                            progress = int((idx / len(stories_data)) * 100)
+                            progress_bar.progress(progress)
+
+                        status_text.text("✅ All stories uploaded successfully!")
+                        st.success(f"Created {len(stories_data)} user stories in Azure DevOps")
+            else:
+                st.warning("No stories found in the requirements files.")
+
+        except Exception as e:
+            st.error(f"Error: {str(e)}")
+        # else:
+        #     st.info("Please fill in all Azure DevOps settings in the sidebar to continue.")
     else:
         st.info("Please select a use case first.")

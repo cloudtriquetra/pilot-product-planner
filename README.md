@@ -23,6 +23,7 @@ PILOT is a streamlined web application that helps product teams transform simple
 product-planner/
 ├── frontend/           # Streamlit web application
 │   ├── main.py        # Main application file
+|   ├── ado.py         # Helper methods for azure devops
 │   └── commands.md    # AI command configurations
 ├── workspace/         # Generated use cases and artifacts
 │   └── [use-case]/    # Individual use case directories
@@ -54,7 +55,7 @@ product-planner/
 
 2. **Install dependencies**
    ```bash
-   pip install streamlit streamlit-mermaid streamlit-shadcn-ui
+   pip install -r requirements.txt
    ```
 
 3. **Configure Claude AI CLI**
@@ -109,7 +110,15 @@ or using their keyboard...
 3. Review generated content with rendered diagrams
 4. Use the documentation server link for a polished view
 
-### 4. Documentation Server
+### 4. Azure Devops Integration
+
+1. Navigate to the **Azure Devops** tab
+2. All Functional & Non Functional requirements (FR & NFR) will be displayed.
+3. Review and update the stories (if required).
+4. Add Azure DevOps Settings to establish the azure deveops connection.
+5. Click **Upload Stories to Azure DevOps** to create the work items.
+
+### 5. Documentation Server
 
 Generated artifacts automatically create an MkDocs documentation site:
 - Accessible via the "View Documentation" button
@@ -182,6 +191,11 @@ pymdown-extensions>=10.0.0
 mkdocs-awesome-pages-plugin>=2.8.0
 mkdocs-minify-plugin>=0.7.0
 mkdocs-git-revision-date-localized-plugin>=1.2.0
+```
+
+### ADO Dependencies
+```
+azure-devops>=7.1.0b4
 ```
 
 ### External Dependencies
