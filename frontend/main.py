@@ -396,15 +396,49 @@ elif selected_tab == "Product Planning":
                     with col:
                         st.link_button("View Documentation", url=f"http://localhost:{usecase_port}", use_container_width=True)
 
-                if run_button and selected_command_name:
+                # Check for "Generate New Version" button click (independent of run_button)
+                generate_new_version = False
+                if selected_command_name:
+                    command_to_run, output_file = command_map[selected_command_name]
+                    if output_file:
+                        report_file_path = os.path.join(usecase_path, output_file)
+                        if os.path.exists(report_file_path):
+                            if st.button("🔄 Generate New Version", type="primary", key=f"regenerate_{selected_command_name}"):
+                                generate_new_version = True
+
+                # Handle both regular generation and new version generation
+                if (run_button and selected_command_name) or generate_new_version:
                     command_to_run, output_file = command_map[selected_command_name]
 
                     should_run_command = True
                     if output_file:
                         report_file_path = os.path.join(usecase_path, output_file)
                         if os.path.exists(report_file_path):
-                            st.info(f"Report '{output_file}' already exists for this use case. Generating new artifact is not required.")
-                            should_run_command = False
+                            if not generate_new_version:
+                                # Show warning only for regular generate button
+                                st.warning(f"⚠️ Report '{output_file}' already exists for this use case.")
+                                st.info("💡 **Tip**: Generating again will create a new version while preserving the existing report. View reports in the **Results** tab.")
+                                should_run_command = False
+                            else:
+                                # Handle versioning for "Generate New Version" button
+                                import datetime
+                                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                base_name = output_file.replace('.md', '')
+                                versioned_name = f"{base_name}_v{timestamp}.md"
+                                versioned_path = os.path.join(usecase_path, versioned_name)
+                                
+                                try:
+                                    # Move existing report to versioned name
+                                    import shutil
+                                    shutil.move(report_file_path, versioned_path)
+                                    st.success(f"✅ Existing report backed up as '{versioned_name}'. Generating new version...")
+                                    should_run_command = True
+                                except Exception as e:
+                                    st.error(f"❌ Failed to backup existing report: {e}")
+                                    should_run_command = False
+                        else:
+                            # No existing report, proceed normally
+                            should_run_command = True
                     
                     if should_run_command:
                         logging.info(f"Starting generating artifact: {selected_command_name} on use case: {selected_usecase}")
@@ -477,25 +511,116 @@ elif selected_tab == "Results":
         st.header("View Generated Reports")
         
         allowed_md_files = ["ra-fr.md", "ra-nfr.md", "ra-diagrams.md", "ra-sdd.md"]
-
         report_names = ["Functional Requirements", "Non-Functional Requirements", "Architecture Diagrams", "System Design Document"]
 
         # Create mapping between report names and filenames
         file_to_report_map = dict(zip(allowed_md_files, report_names))
         report_to_file_map = dict(zip(report_names, allowed_md_files))
         
-        md_files = [f for f in os.listdir(usecase_path) if f in allowed_md_files]
+        # Get all markdown files including versioned ones
+        all_files = os.listdir(usecase_path)
+        current_reports = [f for f in all_files if f in allowed_md_files]
         
-        if not md_files:
+        # Find versioned reports
+        versioned_reports = {}
+        for base_file in allowed_md_files:
+            base_name = base_file.replace('.md', '')
+            versions = [f for f in all_files if f.startswith(f"{base_name}_v") and f.endswith('.md')]
+            if versions:
+                # Sort versions by timestamp (newest first)
+                versions.sort(reverse=True)
+                versioned_reports[base_file] = versions
+        
+        if not current_reports and not versioned_reports:
             st.info("No designated markdown files found in the root of this use case.")
         else:
-            # Get available report names for files that actually exist
-            available_report_names = [file_to_report_map[f] for f in md_files]
+            # Create report selection options
+            available_report_names = []
+            if current_reports:
+                available_report_names.extend([file_to_report_map[f] for f in current_reports])
             
-            selected_report_name = st.selectbox("Select a report to view", available_report_names)
+            selected_report_name = st.selectbox("Select a report type to view", available_report_names)
+            
             if selected_report_name:
-                # Map the selected report name back to the actual filename
                 selected_md_file = report_to_file_map[selected_report_name]
+                
+                # Show version selection if versioned reports exist
+                if selected_md_file in versioned_reports:
+                    # Initialize session state for version selection
+                    version_key = f"version_select_{selected_md_file}_{st.session_state.selected_usecase}"
+                    if version_key not in st.session_state:
+                        st.session_state[version_key] = "Current Version"
+                    
+                    # Prominent section header
+                    st.markdown("## 📋 Version Selection")
+                    
+                    version_options = ["Current Version"] + [f"Version {v.split('_v')[1].replace('.md', '')}" for v in versioned_reports[selected_md_file]]
+                    
+                    selected_version = st.selectbox(
+                        "Select version to view",
+                        version_options,
+                        index=version_options.index(st.session_state[version_key]) if st.session_state[version_key] in version_options else 0,
+                        key=f"version_selector_{selected_md_file}"
+                    )
+                    # Update session state
+                    st.session_state[version_key] = selected_version
+                    
+                    # Show version info
+                    if selected_version == "Current Version":
+                        st.info(f"📄 Viewing current version: **{selected_md_file}**")
+                    else:
+                        st.info(f"📄 Viewing archived version: **{selected_version}**")
+                    
+                    if selected_version != "Current Version":
+                        # Extract timestamp and find corresponding file
+                        version_timestamp = selected_version.replace("Version ", "")
+                        version_file = f"{selected_md_file.replace('.md', '')}_v{version_timestamp}.md"
+                        selected_md_file = version_file
+                        
+                        col_info, col_rollback = st.columns([2, 1])
+                        with col_info:
+                            timestamp = version_file.split("_v")[1].replace(".md", "")
+                            formatted_time = f"{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:8]} {timestamp[9:11]}:{timestamp[11:13]}:{timestamp[13:15]}"
+                            st.info(f"� Generated on: {formatted_time}")
+                        with col_rollback:
+                            if st.button("🔄 Restore as Current", key=f"rollback_{version_file}", type="primary"):
+                                try:
+                                    # Get paths
+                                    base_file = selected_md_file.split('_v')[0] + '.md'
+                                    current_file_path = os.path.join(usecase_path, base_file)
+                                    version_file_path = os.path.join(usecase_path, version_file)
+                                    
+                                    # Create backup of current version before rollback
+                                    import datetime
+                                    import shutil
+                                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    backup_name = f"{base_file.replace('.md', '')}_v{timestamp}.md"
+                                    backup_path = os.path.join(usecase_path, backup_name)
+                                    
+                                    # Move current to backup
+                                    if os.path.exists(current_file_path):
+                                        shutil.move(current_file_path, backup_path)
+                                    
+                                    # Copy selected version to current
+                                    shutil.copy2(version_file_path, current_file_path)
+                                    
+                                    st.success(f"✅ **Rollback successful!** \n- Current version backed up as `{backup_name}` \n- `{version_file}` is now the current version")
+                                    st.info("💡 **Tip**: The current version has been updated. You can now generate new artifacts based on this version.")
+                                    
+                                    # Reset version selection to current
+                                    st.session_state[version_key] = "Current Version"
+                                    
+                                    # Wait a moment then rerun to refresh the view
+                                    import time
+                                    time.sleep(1)
+                                    st.rerun()
+                                    
+                                except Exception as e:
+                                    st.error(f"❌ Failed to restore version: {e}")
+                else:
+                    st.info(f"📄 Viewing current version: **{selected_md_file}**")
+                
+                # Display the selected report
                 md_path = os.path.join(usecase_path, selected_md_file)
                 try:
                     with open(md_path, 'r', encoding='utf-8') as f:
