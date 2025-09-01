@@ -290,8 +290,53 @@ if selected_tab == "Product Use Case":
                 try:
                     with open(usecase_md_path, 'r', encoding='utf-8') as f:
                         usecase_content = f.read()
+                    
+                    # Check if we're in edit mode for this use case
+                    edit_key = f"edit_mode_{st.session_state.get('selected_usecase')}"
+                    
                     with st.expander("📋 Use Case Description", expanded=True):
-                        st.markdown(usecase_content)
+                        col1, col2 = st.columns([4, 1])
+                        
+                        with col2:
+                            if not st.session_state.get(edit_key, False):
+                                if st.button("✏️ Edit", key=f"edit_btn_{st.session_state.get('selected_usecase')}", use_container_width=True):
+                                    st.session_state[edit_key] = True
+                                    st.rerun()
+                        
+                        with col1:
+                            if st.session_state.get(edit_key, False):
+                                # Extract current name and description
+                                lines = usecase_content.split('\n')
+                                current_name = lines[0].replace('# ', '') if lines else st.session_state.get('selected_usecase')
+                                current_description = '\n'.join(lines[2:]) if len(lines) > 2 else ""
+                                
+                                with st.form(f"edit_usecase_form_{st.session_state.get('selected_usecase')}"):
+                                    updated_name = st.text_input("Use case name", value=current_name)
+                                    updated_description = st.text_area("Description", value=current_description, height=150)
+                                    
+                                    col_save, col_cancel = st.columns(2)
+                                    with col_save:
+                                        save_btn = st.form_submit_button("💾 Save", type="primary")
+                                    with col_cancel:
+                                        cancel_btn = st.form_submit_button("❌ Cancel")
+                                    
+                                    if save_btn:
+                                        if updated_name.strip() and updated_description.strip():
+                                            # Save the updated content
+                                            with open(usecase_md_path, 'w', encoding='utf-8') as f:
+                                                f.write(f"# {updated_name}\n\n{updated_description}\n")
+                                            st.session_state[edit_key] = False
+                                            st.session_state.use_case_saved_message = "Use case updated successfully!"
+                                            st.rerun()
+                                        else:
+                                            st.warning("Please provide both name and description.")
+                                    
+                                    if cancel_btn:
+                                        st.session_state[edit_key] = False
+                                        st.rerun()
+                            else:
+                                st.markdown(usecase_content)
+                                
                 except FileNotFoundError:
                     st.info("Use case description not found.")
                 except Exception as e:
