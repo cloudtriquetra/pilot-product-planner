@@ -678,10 +678,11 @@ elif selected_tab == "Azure DevOps":
                 type="password",
                 help="Personal Access Token with Work Items permissions"
             )
-            area_path = st.text_input(
-                "Area Path",
-                value=st.session_state.ado_settings['area_path']
-            )
+            # area_path = st.text_input(
+            #     "Area Path",
+            #     value=st.session_state.ado_settings['area_path']
+            # )
+            area_path = ""
             iteration = st.text_input(
                 "Iteration",
                 value=st.session_state.ado_settings['iteration']
@@ -825,7 +826,9 @@ elif selected_tab == "Azure DevOps":
                                 {"op": "add", "path": "/fields/Microsoft.VSTS.Scheduling.StoryPoints",
                                     "value": story['points']},
                                 {"op": "add", "path": "/fields/System.AreaPath",
-                                    "value": f"{project}\\{area_path}"},
+                                "value": area_path if '\\' in area_path else project},  # Use project as default if no path specified
+                                # {"op": "add", "path": "/fields/System.AreaPath",
+                                #     "value": f"{project}\\{area_path}"},
                                 {"op": "add", "path": "/fields/System.IterationPath",
                                     "value": f"{project}\\{iteration}"},
                                 {"op": "add", "path": "/fields/System.Tags",
