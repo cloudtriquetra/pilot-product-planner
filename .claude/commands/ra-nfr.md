@@ -6,7 +6,7 @@ Deliverables (in this order):
    - One short paragraph summarizing the use case scope from a quality attributes perspective.
 
 2) **Quality User Stories** (bullet list)
-   - Format: `As a <role>, I need <quality attribute>, so that <business value>.`
+   - Format: `**QUS-[index]:** As a <role>, I need <quality attribute>, so that <business value>.`
    - Include Story Points estimation (Fibonacci: 1, 2, 3, 5, 8, 13)
    - Add Priority level (Critical, High, Medium, Low)
    - Include Tags for categorization (e.g., Performance, Security, Reliability)

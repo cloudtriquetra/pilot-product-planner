@@ -6,7 +6,7 @@ Deliverables (in this order):
    - One short paragraph summarizing the use case so a new engineer understands the scope.
 
 2) **User Stories** (bullet list)
-   - Format: `As a <role>, I want <capability>, so that <benefit>.`
+   - Format: `**US-[index]:** As a <role>, I want <capability>, so that <benefit>.`
    - Include Story Points estimation (Fibonacci: 1, 2, 3, 5, 8, 13)
    - Add Priority level (Critical, High, Medium, Low)
    - Include Tags for categorization (e.g., Frontend, Backend, API, Security)
