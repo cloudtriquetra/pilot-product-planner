@@ -20,6 +20,8 @@ st.set_page_config(
     layout="wide"                  # Optional: 'centered' or 'wide'
 )
 
+apply_compact_styles()
+
 
 # --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
