@@ -696,7 +696,7 @@ elif selected_tab == "Azure DevOps":
                 st.session_state.ado_settings = {
                     'organization': 'pandeymohit',
                     'project': 'devsecops',
-                    'pat': 'SApYIx0oiRbCdMiGbfNKbgztxLCblPsQc4BaqVbcXvXczz4b9G5vJQQJ99BIACAAAAAAAAAAAAASAZDO3zSx',
+                    'pat': '',
                     # 'area_path': '',
                     # 'iteration': 'Sprint 1'
                 }
