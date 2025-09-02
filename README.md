@@ -7,6 +7,21 @@ PILOT is a streamlined web application that helps product teams transform simple
 ![Python](https://img.shields.io/badge/Python-3.8+-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+
+## 🛠️ Technologies Used
+
+- **Streamlit**: For building the interactive web application interface
+- **Python 3.8+**: Core programming language for backend and logic
+- **Claude AI CLI**: AI-powered artifact and documentation generation
+- **Mermaid.js**: For rendering architecture and system diagrams
+- **MkDocs & MkDocs Material**: For generating and serving professional documentation sites
+- **Azure DevOps Python SDK**: Integration for work item management
+- **streamlit-mermaid, streamlit-shadcn-ui**: Streamlit component libraries for enhanced UI and diagram support
+- **Pymdown Extensions**: Advanced Markdown rendering in documentation
+- **Git**: Version control and repository management
+
+---
+
 ## ✨ Features
 
 - **📝 Use Case Management**: Create and manage product use cases with intuitive descriptions
