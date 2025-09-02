@@ -11,17 +11,8 @@ JSON Schema requirements:
 
 - Top-level object keys:
   - context: string (≤100 words)
-  - userStories: array of objects with fields:
-    - id: string (e.g., "US-1" Format: **US-[index]:** )
-    - role: string
-    - capability: string
-    - benefit: string
-    - storyPoints: integer (enum: 1, 2, 3, 5, 8, 13)
-    - priority: string (enum: "Critical", "High", "Medium", "Low")
-    - tags: array of string
-    - epic: string (optional)
-  - functionalRequirements: array of objects with fields aligned to the FR card UI:
-    - id: string (e.g., "FR-1")
+  - userStories: array of objects with fields aligned to the FR card UI:
+    - id: string (e.g., "US-1")
     - title: string
     - asA: string
     - iWantTo: string
@@ -30,6 +21,7 @@ JSON Schema requirements:
     - priority: string (enum: "Critical", "High", "Medium", "Low")
     - tags: array of string
     - relatedUserStories: array of string (refs like "US-1")
+    - epic: string (optional)
     - acceptanceCriteria: array of objects (2–5 items) with fields:
       - id: string (e.g., "AC-1")
       - given: string
