@@ -17,7 +17,7 @@ from ado import parse_story, generate_ado_story
 st.set_page_config(
     page_title="PILOT",  # This is the browser tab title
     page_icon="",  # Empty icon for simplicity
-    layout="centered"                  # Optional: 'centered' or 'wide'
+    layout="wide"                  # Optional: 'centered' or 'wide'
 )
 
 
@@ -42,6 +42,39 @@ if 'last_generation_status' not in st.session_state:
     st.session_state.last_generation_status = None
 
 
+
+@st.cache_data(ttl=60)
+def get_claude_cli_status():
+    """Return (is_runnable, version_text_or_none) for the Claude CLI.
+    Tries common version invocations and parses a semantic version if present.
+    """
+    def _try_cmd(args):
+        try:
+            completed = subprocess.run(
+                args, capture_output=True, text=True, check=False, timeout=3
+            )
+            if completed.returncode == 0:
+                output = (completed.stdout or "") + (completed.stderr or "")
+                text = output.strip()
+                if text:
+                    # Extract a version-like token if present
+                    m = re.search(r"v?(\d+\.\d+\.\d+(?:[-+][\w\.-]+)?)", text)
+                    return True, (m.group(0) if m else text)
+                return True, None
+        except FileNotFoundError:
+            return False, None
+        except subprocess.TimeoutExpired:
+            return False, None
+        except Exception:
+            return False, None
+        return False, None
+
+    # Try common flags/commands
+    for cmd in (["claude", "--version"], ["claude", "version"], ["claude", "-v"]):
+        ok, ver = _try_cmd(cmd)
+        if ok:
+            return True, ver
+    return False, None
 
 def run_command_in_thread(process, q):
     try:
@@ -192,6 +225,13 @@ st.caption("Product Innovation & Lifecycle Orchestration Tool")
 
 if st.session_state.get('selected_usecase'):
     st.caption(f"Selected Use Case: `{st.session_state.get('selected_usecase')}`")
+
+# Claude CLI status indicator
+cli_ok, cli_version = get_claude_cli_status()
+if cli_ok:
+    st.caption(f"🟢 Backend {cli_version if cli_version else ''}")
+else:
+    st.caption("🔴 Backend CLI not runnable")
 
 # --- Tabs ---
 tab_options = ["Product Use Case"]
