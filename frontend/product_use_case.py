@@ -470,7 +470,7 @@ def interactive_data_collection():
     if not st.session_state.onboarding_chat:
         welcome_msg = {
             "role": "assistant", 
-            "content": "What's the name of your project?"
+            "content": "Tell me about your project. You can provide multiple details in one message."
         }
         st.session_state.onboarding_chat.append(welcome_msg)
     
@@ -633,3 +633,35 @@ def show_product_use_case_page():
         # Show context in expandable section
         with st.expander("📄 Project Context", expanded=False):
             st.markdown(context_content)
+        
+        # Add edit functionality
+        st.markdown("---")
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown("### ✏️ Edit Project Details")
+        with col2:
+            edit_mode = st.toggle("Edit Mode", help="Enable editing of the project file")
+        
+        if edit_mode:
+            st.info("📝 You are now in edit mode. Make your changes below and click 'Save Changes' to update the project file.")
+            
+            # Create editable text area with current content
+            edited_content = st.text_area(
+                "Edit usecase.md content:",
+                value=context_content,
+                height=400,
+                help="Edit the project details. This will update the usecase.md file."
+            )
+            
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                if st.button("💾 Save Changes", type="primary"):
+                    try:
+                        with open(current_file, 'w', encoding='utf-8') as f:
+                            f.write(edited_content)
+                        st.success("✅ Project file updated successfully!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Error saving file: {str(e)}")
+        else:
+            st.markdown("💡 Toggle 'Edit Mode' above to modify the project details.")

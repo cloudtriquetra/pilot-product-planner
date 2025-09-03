@@ -235,8 +235,8 @@ st.subheader("📄 Results")
 if not os.path.isdir(usecase_path):
     st.info("Project folder not found.")
 else:
-    allowed_md_files = ["ra-fr.md", "ra-nfr.md", "ra-diagrams.md", "ra-sdd.md"]
-    report_names = ["Functional Requirements", "Non-Functional Requirements", "Architecture Diagrams", "System Design Document"]
+    allowed_md_files = ["ra-fr.md", "ra-nfr.md", "ra-diagrams.md", "ra-sdd.md", "ra-security-controls.md"]
+    report_names = ["Functional Requirements", "Non-Functional Requirements", "Architecture Diagrams", "System Design Document", "Security Controls Assessment"]
     file_to_report_map = dict(zip(allowed_md_files, report_names))
     report_to_file_map = dict(zip(report_names, allowed_md_files))
 
