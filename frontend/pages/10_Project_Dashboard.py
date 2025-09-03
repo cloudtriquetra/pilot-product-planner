@@ -135,7 +135,7 @@ def show_run_progress(run_key: str, title: str):
 selected_usecase = st.session_state.get("selected_usecase")
 if not selected_usecase:
     st.warning("No project selected. Please choose one from the Dashboard.")
-    st.page_link("pages/00_Dashboard.py", label="Go to Dashboard", icon="🏠")
+    st.page_link("Pilot.py", label="Go to Dashboard", icon="🏠")
     st.stop()
 
 usecase_path = os.path.join("../workspace", selected_usecase)
