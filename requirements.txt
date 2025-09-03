@@ -3,3 +3,4 @@ streamlit>=1.33.0
 streamlit-mermaid>=0.2.0
 streamlit-shadcn-ui>=0.1.8
 azure-devops>=7.1.0b4
+anthropic
