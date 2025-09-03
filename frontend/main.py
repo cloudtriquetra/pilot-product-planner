@@ -12,6 +12,7 @@ import logging
 from azure.devops.connection import Connection
 from msrest.authentication import BasicAuthentication
 from ado import load_stories_from_json
+from ui import apply_compact_styles
 
 
 st.set_page_config(

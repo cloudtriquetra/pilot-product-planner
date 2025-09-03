@@ -153,41 +153,37 @@ if cli_ok:
 else:
     st.caption("🔴 Backend CLI not runnable")
 
+st.subheader("⚙️ Actions")
 
-left, right = st.columns([1, 1])
+# Parse commands from frontend/commands.md
+command_map = {}
+commands_file = os.path.join(".", "commands.md")
+try:
+    if os.path.exists(commands_file):
+        with open(commands_file, "r", encoding="utf-8") as f:
+            relative_usecase_path = os.path.join("workspace", selected_usecase) + os.sep
+            for line in f:
+                if line.strip():
+                    parts = [p.strip() for p in line.strip().split(",", 2)]
+                    if len(parts) >= 2:
+                        name = parts[0]
+                        command_template = parts[1]
+                        output_file = parts[2] if len(parts) > 2 else None
+                        command = command_template.replace("$USECASE", relative_usecase_path)
+                        command_map[name] = (command, output_file)
+except Exception as e:
+    st.error(f"Failed to load commands: {e}")
 
-with left:
-    st.subheader("⚙️ Actions")
-
-    # Parse commands from frontend/commands.md
-    command_map = {}
-    commands_file = os.path.join(".", "commands.md")
-    try:
-        if os.path.exists(commands_file):
-            with open(commands_file, "r", encoding="utf-8") as f:
-                relative_usecase_path = os.path.join("workspace", selected_usecase) + os.sep
-                for line in f:
-                    if line.strip():
-                        parts = [p.strip() for p in line.strip().split(",", 2)]
-                        if len(parts) >= 2:
-                            name = parts[0]
-                            command_template = parts[1]
-                            output_file = parts[2] if len(parts) > 2 else None
-                            command = command_template.replace("$USECASE", relative_usecase_path)
-                            command_map[name] = (command, output_file)
-    except Exception as e:
-        st.error(f"Failed to load commands: {e}")
-
-    if not command_map:
-        st.info("No commands found in commands.md")
-    else:
-        st.markdown('<div class="actions-grid">', unsafe_allow_html=True)
-        names = list(command_map.keys())
-        cols = st.columns(2)
-        for idx, name in enumerate(names):
-            cmd, output_file = command_map[name]
-            with cols[idx % len(cols)]:
-                with st.container(border=True):
+if not command_map:
+    st.info("No commands found in commands.md")
+else:
+    st.markdown('<div class="actions-grid">', unsafe_allow_html=True)
+    names = list(command_map.keys())
+    cols = st.columns(2)
+    for idx, name in enumerate(names):
+        cmd, output_file = command_map[name]
+        with cols[idx % len(cols)]:
+            with st.container(border=True):
                     # Header row: title + compact action icons
                     can_newver = False
                     report_file_path = None
@@ -234,82 +230,62 @@ with left:
                             st.error(f"Failed to create new version: {e}")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.subheader("💬 Chat")
-    chat_key = f"chat_history_{selected_usecase}"
-    if chat_key not in st.session_state:
-        st.session_state[chat_key] = []
+st.markdown("---")
+st.subheader("📄 Results")
+if not os.path.isdir(usecase_path):
+    st.info("Project folder not found.")
+else:
+    allowed_md_files = ["ra-fr.md", "ra-nfr.md", "ra-diagrams.md", "ra-sdd.md"]
+    report_names = ["Functional Requirements", "Non-Functional Requirements", "Architecture Diagrams", "System Design Document"]
+    file_to_report_map = dict(zip(allowed_md_files, report_names))
+    report_to_file_map = dict(zip(report_names, allowed_md_files))
 
-    for msg in st.session_state[chat_key]:
-        with st.chat_message(msg.get("role", "assistant")):
-            st.write(msg.get("content", ""))
+    all_files = os.listdir(usecase_path)
+    current_reports = [f for f in all_files if f in allowed_md_files]
 
-    prompt = st.chat_input("Type a message and press Enter...")
-    if prompt:
-        st.session_state[chat_key].append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
-        reply = "Message received."
-        st.session_state[chat_key].append({"role": "assistant", "content": reply})
-        with st.chat_message("assistant"):
-            st.write(reply)
+    versioned_reports = {}
+    for base_file in allowed_md_files:
+        base_name = base_file.replace('.md', '')
+        versions = [f for f in all_files if f.startswith(f"{base_name}_v") and f.endswith('.md')]
+        if versions:
+            versions.sort(reverse=True)
+            versioned_reports[base_file] = versions
 
-with right:
-    st.subheader("📄 Results")
-    if not os.path.isdir(usecase_path):
-        st.info("Project folder not found.")
+    if not current_reports and not versioned_reports:
+        st.info("No designated markdown reports found for this project.")
     else:
-        allowed_md_files = ["ra-fr.md", "ra-nfr.md", "ra-diagrams.md", "ra-sdd.md"]
-        report_names = ["Functional Requirements", "Non-Functional Requirements", "Architecture Diagrams", "System Design Document"]
-        file_to_report_map = dict(zip(allowed_md_files, report_names))
-        report_to_file_map = dict(zip(report_names, allowed_md_files))
+        available_report_names = []
+        if current_reports:
+            available_report_names.extend([file_to_report_map[f] for f in current_reports])
 
-        all_files = os.listdir(usecase_path)
-        current_reports = [f for f in all_files if f in allowed_md_files]
+        selected_report_name = st.selectbox("Select a report type", available_report_names)
+        if selected_report_name:
+            selected_md_file = report_to_file_map[selected_report_name]
 
-        versioned_reports = {}
-        for base_file in allowed_md_files:
-            base_name = base_file.replace('.md', '')
-            versions = [f for f in all_files if f.startswith(f"{base_name}_v") and f.endswith('.md')]
-            if versions:
-                versions.sort(reverse=True)
-                versioned_reports[base_file] = versions
+            if selected_md_file in versioned_reports:
+                version_options = ["Current Version"] + [
+                    f"Version {v.split('_v')[1].replace('.md', '')}" for v in versioned_reports[selected_md_file]
+                ]
+                selected_version = st.selectbox("Select version", version_options)
+                if selected_version != "Current Version":
+                    version_timestamp = selected_version.replace("Version ", "")
+                    selected_md_file = f"{selected_md_file.replace('.md', '')}_v{version_timestamp}.md"
+                    st.info(f"📄 Viewing archived version: {selected_version}")
+                else:
+                    st.info(f"📄 Viewing current version: {selected_md_file}")
 
-        if not current_reports and not versioned_reports:
-            st.info("No designated markdown reports found for this project.")
-        else:
-            available_report_names = []
-            if current_reports:
-                available_report_names.extend([file_to_report_map[f] for f in current_reports])
-
-            selected_report_name = st.selectbox("Select a report type", available_report_names)
-            if selected_report_name:
-                selected_md_file = report_to_file_map[selected_report_name]
-
-                if selected_md_file in versioned_reports:
-                    version_options = ["Current Version"] + [
-                        f"Version {v.split('_v')[1].replace('.md', '')}" for v in versioned_reports[selected_md_file]
-                    ]
-                    selected_version = st.selectbox("Select version", version_options)
-                    if selected_version != "Current Version":
-                        version_timestamp = selected_version.replace("Version ", "")
-                        selected_md_file = f"{selected_md_file.replace('.md', '')}_v{version_timestamp}.md"
-                        st.info(f"📄 Viewing archived version: {selected_version}")
+            md_path = os.path.join(usecase_path, selected_md_file)
+            try:
+                with open(md_path, 'r', encoding='utf-8') as f:
+                    md_content = f.read()
+                parts = re.split(r"(```mermaid\n.*?\n```)", md_content, flags=re.DOTALL)
+                for part in parts:
+                    if part.strip().startswith("```mermaid"):
+                        mermaid_code = part.strip().replace("```mermaid", "").replace("```", "")
+                        st_mermaid(mermaid_code)
                     else:
-                        st.info(f"📄 Viewing current version: {selected_md_file}")
-
-                md_path = os.path.join(usecase_path, selected_md_file)
-                try:
-                    with open(md_path, 'r', encoding='utf-8') as f:
-                        md_content = f.read()
-                    parts = re.split(r"(```mermaid\n.*?\n```)", md_content, flags=re.DOTALL)
-                    for part in parts:
-                        if part.strip().startswith("```mermaid"):
-                            mermaid_code = part.strip().replace("```mermaid", "").replace("```", "")
-                            st_mermaid(mermaid_code)
-                        else:
-                            st.markdown(part, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"Error reading markdown file: {e}")
+                        st.markdown(part, unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Error reading markdown file: {e}")
 
 
