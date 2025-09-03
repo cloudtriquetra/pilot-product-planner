@@ -6,7 +6,7 @@ from ui import apply_compact_styles
 from product_use_case import show_product_use_case_page, initialize_session_state
 
 st.set_page_config(
-    page_title="Dashboard",
+    page_title="PILOT",
     page_icon="",
     layout="wide"
 )
@@ -57,8 +57,8 @@ def _slugify(name: str) -> str:
     return slug or f"usecase-{int(time.time())}"
 
 
-st.title("Dashboard")
-st.caption("Projects overview and quick actions")
+st.title("PILOT")
+st.caption("Product Innovation and Lifecycle Orchestration Tool")
 
 cli_ok, cli_version = get_claude_cli_status()
 if cli_ok:

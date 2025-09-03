@@ -37,7 +37,7 @@ PILOT is a streamlined web application that helps product teams transform simple
 ```
 product-planner/
 ├── frontend/           # Streamlit web application
-│   ├── main.py        # Main application file
+│   ├── Pilot.py        # Main application file
 |   ├── ado.py         # Helper methods for azure devops
 │   └── commands.md    # AI command configurations
 ├── workspace/         # Generated use cases and artifacts
@@ -82,7 +82,7 @@ product-planner/
 4. **Run the application**
    ```bash
    cd frontend
-   streamlit run main.py
+   streamlit run Pilot.py
    ```
 
 5. **Access PILOT**
