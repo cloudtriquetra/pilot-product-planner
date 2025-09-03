@@ -12,6 +12,7 @@ import logging
 from azure.devops.connection import Connection
 from msrest.authentication import BasicAuthentication
 from ado import load_stories_from_json
+import json
 
 
 st.set_page_config(
@@ -234,16 +235,14 @@ else:
     st.caption("🔴 Backend CLI not runnable")
 
 # --- Tabs ---
-tab_options = ["Product Use Case"]
-if st.session_state.get('selected_usecase'):
-    tab_options.extend(["Product Planning", "Results", "Azure DevOps"])
+tab_options = ["Create or Update Product Use Case", "Product Planning", "Results", "Azure DevOps"]
 
 # Determine default tab
 if st.session_state.get('command_is_running'):
     # Command is running, default to Product Planning tab
     default_tab = "Product Planning"
 else:
-    default_tab = "Product Use Case"
+    default_tab = "Create or Update Product Use Case"
 
 selected_tab = ui.tabs(options=tab_options, default_value=default_tab)
 
@@ -251,50 +250,863 @@ def _slugify(name: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", name.strip()).strip("-").lower()
     return slug or f"usecase-{int(time.time())}"
 
-if selected_tab == "Product Use Case":
+def validate_with_ai(question_key: str, user_input: str, previous_answers: dict) -> tuple[bool, str]:
+    """
+    Use AI to validate user input based on context and previous answers.
+    Returns (is_valid, error_message)
+    """
+    import re
+    
+    if not user_input.strip():
+        return False, "Please provide an answer before continuing."
+    
+    # Create context from previous answers
+    context_info = "\n".join([f"{key}: {value}" for key, value in previous_answers.items()])
+    
+    validation_prompts = {
+        "use_case_name": f"""
+        Validate this use case name: "{user_input}"
+        
+        Requirements:
+        - Should be a clear, descriptive identifier
+        - Should not contain special characters except hyphens and underscores
+        - Should be between 3-50 characters
+        
+        Is this valid? Respond with only "VALID" or "INVALID: reason"
+        """,
+        
+        "use_case_desc": f"""
+        Validate this use case description: "{user_input}"
+        
+        Requirements:
+        - Should be at least 20 characters
+        - Should describe functionality clearly
+        - Should provide business context
+        
+        Is this valid? Respond with only "VALID" or "INVALID: reason"
+        """,
+        
+        "business_criticality": f"""
+        Validate this business criticality input: "{user_input}"
+        
+        Context from previous answers:
+        {context_info}
+        
+        Requirements:
+        - Must be a number from 1 to 5
+        - Should make sense given the use case description
+        
+        Is this valid? Respond with only "VALID" or "INVALID: reason"
+        """,
+        
+        "app_exposure": f"""
+        Validate this application exposure input: "{user_input}"
+        
+        Context from previous answers:
+        {context_info}
+        
+        Requirements:
+        - Must be either "internet" or "internal"
+        - Should make sense given the use case description
+        
+        Is this valid? Respond with only "VALID" or "INVALID: reason"
+        """,
+        
+        "countries": f"""
+        Validate this countries input: "{user_input}"
+        
+        Context from previous answers:
+        {context_info}
+        
+        Requirements:
+        - Should be real country names or "worldwide"
+        - Should make sense for the application type
+        
+        Is this valid? Respond with only "VALID" or "INVALID: reason"
+        """,
+        
+        "platforms": f"""
+        Validate this platforms input: "{user_input}"
+        
+        Context from previous answers:
+        {context_info}
+        
+        Requirements:
+        - Should be valid platform names (web, mobile android, mobile ios, desktop, etc.)
+        - Should make sense given the use case description
+        - If the description already mentions specific platforms, validate consistency
+        
+        Is this valid? Respond with only "VALID" or "INVALID: reason"
+        """
+    }
+    
+    # For now, use enhanced rule-based validation
+    # In production, this would call Claude API
+    if question_key == "use_case_name":
+        if len(user_input.strip()) < 3:
+            return False, "Use case name should be at least 3 characters long."
+        if len(user_input.strip()) > 50:
+            return False, "Use case name should be no more than 50 characters."
+        if not re.match(r'^[a-zA-Z0-9._-]+$', user_input.strip()):
+            return False, "Use case name should only contain letters, numbers, dots, hyphens, and underscores."
+        return True, ""
+    
+    elif question_key == "use_case_desc":
+        # Enhanced LLM-style validation for use case description
+        input_text = user_input.strip()
+        
+        if len(input_text) < 20:
+            return False, "Description should be at least 20 characters to provide meaningful context."
+        
+        # Check for garbage patterns
+        garbage_patterns = [
+            'asdf', 'qwerty', 'hjkl', 'zxcv', 'poiu', 'mnbv',
+            '123456', 'abcdef', 'test test test', 'blah blah',
+            'lorem ipsum', 'dummy text', 'sample text',
+            'fdsa', 'ghjk', 'yuio', 'vbnm', 'rtyu'
+        ]
+        
+        # Check for repetitive patterns
+        words = input_text.lower().split()
+        if len(words) > 3:
+            # Check for repeated words (more than 50% repetition)
+            word_counts = {}
+            for word in words:
+                word_counts[word] = word_counts.get(word, 0) + 1
+            
+            max_repetition = max(word_counts.values()) if word_counts else 0
+            if max_repetition > len(words) * 0.5:
+                return False, "Please provide a meaningful description. Avoid repeating the same words excessively."
+        
+        # Check for garbage patterns
+        if any(pattern in input_text.lower() for pattern in garbage_patterns):
+            return False, "Please provide a real, meaningful description of your use case functionality and business purpose."
+        
+        # Check for minimum number of meaningful words
+        meaningful_words = [word for word in words if len(word) > 2 and word.isalpha()]
+        if len(meaningful_words) < 5:
+            return False, "Please provide a more detailed description with at least 5 meaningful words describing the functionality."
+        
+        # Check for business/technical context
+        business_indicators = [
+            'user', 'customer', 'business', 'service', 'application', 'system', 'platform',
+            'feature', 'functionality', 'process', 'workflow', 'management', 'data',
+            'interface', 'integration', 'automation', 'dashboard', 'analytics', 'report',
+            'payment', 'order', 'product', 'inventory', 'account', 'profile', 'login',
+            'search', 'browse', 'purchase', 'checkout', 'notification', 'email',
+            'mobile', 'web', 'api', 'database', 'cloud', 'security', 'authentication'
+        ]
+        
+        has_business_context = any(indicator in input_text.lower() for indicator in business_indicators)
+        if not has_business_context:
+            return False, "Please describe the business functionality or technical purpose of your use case (e.g., user management, payment processing, data analytics, etc.)."
+        
+        return True, ""
+    
+    elif question_key == "business_criticality":
+        if user_input.strip() not in ['1', '2', '3', '4', '5']:
+            return False, "Please enter a valid criticality level (1, 2, 3, 4, or 5)."
+        return True, ""
+    
+    elif question_key == "app_exposure":
+        if user_input.strip().lower() not in ['internet', 'internal']:
+            return False, "Please enter either 'internet' for public-facing or 'internal' for internal-only applications."
+        return True, ""
+    
+    elif question_key == "countries":
+        # Enhanced LLM-style validation for countries
+        input_text = user_input.strip()
+        
+        if len(input_text) < 2:
+            return False, "Please provide at least one country name."
+        
+        # Handle worldwide option
+        if input_text.lower() == "worldwide":
+            return True, ""
+        
+        # Comprehensive list of valid countries and variations
+        valid_countries = {
+            'united states', 'usa', 'us', 'america', 'united kingdom', 'uk', 'britain', 'england',
+            'canada', 'australia', 'germany', 'france', 'italy', 'spain', 'japan', 'china',
+            'india', 'brazil', 'mexico', 'russia', 'south korea', 'netherlands', 'sweden',
+            'norway', 'denmark', 'finland', 'switzerland', 'austria', 'belgium', 'portugal',
+            'ireland', 'new zealand', 'singapore', 'hong kong', 'taiwan', 'thailand', 'vietnam',
+            'philippines', 'indonesia', 'malaysia', 'south africa', 'egypt', 'nigeria',
+            'morocco', 'kenya', 'ghana', 'argentina', 'chile', 'colombia', 'peru', 'venezuela',
+            'ecuador', 'uruguay', 'bolivia', 'paraguay', 'poland', 'czech republic', 'hungary',
+            'romania', 'bulgaria', 'croatia', 'slovenia', 'slovakia', 'estonia', 'latvia',
+            'lithuania', 'greece', 'turkey', 'israel', 'saudi arabia', 'uae', 'qatar', 'kuwait',
+            'bahrain', 'oman', 'jordan', 'lebanon', 'cyprus', 'malta', 'iceland', 'luxembourg',
+            'liechtenstein', 'monaco', 'andorra', 'san marino', 'vatican', 'bangladesh',
+            'pakistan', 'sri lanka', 'nepal', 'bhutan', 'maldives', 'myanmar', 'laos',
+            'cambodia', 'brunei', 'mongolia', 'kazakhstan', 'uzbekistan', 'kyrgyzstan',
+            'tajikistan', 'turkmenistan', 'afghanistan', 'iran', 'iraq', 'syria', 'yemen',
+            'armenia', 'azerbaijan', 'georgia', 'moldova', 'belarus', 'ukraine', 'serbia',
+            'montenegro', 'bosnia', 'herzegovina', 'kosovo', 'macedonia', 'albania', 'tunisia',
+            'algeria', 'libya', 'sudan', 'ethiopia', 'somalia', 'djibouti', 'eritrea',
+            'madagascar', 'mauritius', 'seychelles', 'comoros', 'zimbabwe', 'zambia', 'malawi',
+            'mozambique', 'botswana', 'namibia', 'lesotho', 'swaziland', 'angola', 'democratic republic congo',
+            'republic congo', 'cameroon', 'chad', 'central african republic', 'gabon', 'equatorial guinea',
+            'benin', 'togo', 'burkina faso', 'mali', 'niger', 'mauritania', 'senegal', 'gambia',
+            'guinea bissau', 'guinea', 'sierra leone', 'liberia', 'ivory coast', 'costa rica',
+            'panama', 'nicaragua', 'honduras', 'guatemala', 'belize', 'el salvador', 'cuba',
+            'jamaica', 'haiti', 'dominican republic', 'puerto rico', 'trinidad', 'tobago',
+            'barbados', 'grenada', 'saint lucia', 'saint vincent', 'grenadines', 'antigua',
+            'barbuda', 'dominica', 'saint kitts', 'nevis', 'bahamas', 'fiji', 'papua new guinea',
+            'solomon islands', 'vanuatu', 'samoa', 'tonga', 'palau', 'micronesia', 'marshall islands',
+            'kiribati', 'tuvalu', 'nauru'
+        }
+        
+        # Extended garbage patterns for countries
+        garbage_patterns = [
+            'asdf', 'qwerty', 'hjkl', 'zxcv', 'poiu', 'mnbv', 'fdsa', 'ghjk', 'yuio', 'vbnm',
+            '123', '456', '789', 'abc', 'def', 'xyz', 'test', 'sample', 'example',
+            'garbage', 'random', 'dummy', 'fake', 'xxx', 'yyy', 'zzz', 'aaa', 'bbb',
+            'qwe', 'rty', 'uio', 'sdf', 'ghj', 'kl', 'xcv', 'bnm', 'wer', 'ert',
+            'tyu', 'iop', 'dfg', 'fgh', 'hjk', 'jkl', 'cvb', 'vbn', 'bnm'
+        ]
+        
+        # Check for garbage patterns
+        if any(pattern in input_text.lower() for pattern in garbage_patterns):
+            return False, "Please provide real country names (e.g., United States, Canada, Germany, Japan, etc.)."
+        
+        # Parse countries (split by comma, semicolon, or 'and')
+        import re
+        country_list = re.split(r'[,;]|\sand\s', input_text.lower())
+        country_list = [country.strip() for country in country_list if country.strip()]
+        
+        if not country_list:
+            return False, "Please provide at least one valid country name."
+        
+        # Validate each country
+        invalid_countries = []
+        for country in country_list:
+            # Remove common prefixes/suffixes
+            cleaned_country = country.replace('the ', '').replace(' republic', '').replace(' federation', '')
+            
+            # Check if it's a valid country or close match
+            is_valid = False
+            
+            # Direct match
+            if cleaned_country in valid_countries:
+                is_valid = True
+            
+            # Partial match for longer country names
+            if not is_valid:
+                for valid_country in valid_countries:
+                    if (len(cleaned_country) > 4 and cleaned_country in valid_country) or \
+                       (len(valid_country) > 4 and valid_country in cleaned_country):
+                        is_valid = True
+                        break
+            
+            # Check for obvious non-country patterns
+            if not is_valid:
+                # Too short and not a known abbreviation
+                if len(cleaned_country) < 3 and cleaned_country not in ['us', 'uk']:
+                    invalid_countries.append(country)
+                # Contains numbers
+                elif any(char.isdigit() for char in cleaned_country):
+                    invalid_countries.append(country)
+                # Too many repeated characters
+                elif len(set(cleaned_country.replace(' ', ''))) < 3:
+                    invalid_countries.append(country)
+                # Common non-country words
+                elif cleaned_country in ['city', 'state', 'province', 'region', 'continent', 'world', 'earth', 'planet']:
+                    invalid_countries.append(country)
+                else:
+                    # If it looks like it could be a country name (alphabetic, reasonable length)
+                    if cleaned_country.replace(' ', '').isalpha() and 3 <= len(cleaned_country) <= 30:
+                        is_valid = True
+                    else:
+                        invalid_countries.append(country)
+        
+        if invalid_countries:
+            return False, f"Please provide valid country names. These don't appear to be countries: {', '.join(invalid_countries)}. Use real country names like 'United States, Canada, Germany'."
+        
+        if len(country_list) > 10:
+            return False, "Please limit to maximum 10 countries for practical implementation scope."
+        
+        return True, ""
+    
+    elif question_key == "platforms":
+        # Enhanced validation for platforms with context awareness
+        input_lower = user_input.strip().lower()
+        
+        # Check if it contains obvious garbage
+        garbage_indicators = ['asdf', 'qwerty', '123', 'test', 'garbage', 'random', 'xxx']
+        if any(indicator in input_lower for indicator in garbage_indicators):
+            return False, "Please provide real platform names (e.g., 'web', 'mobile android', 'mobile ios', 'desktop windows')."
+        
+        # Check if it contains valid platform keywords
+        valid_platforms = ['web', 'mobile', 'android', 'ios', 'desktop', 'windows', 'mac', 'linux', 'wearable', 'watch', 'tablet', 'api']
+        if not any(platform in input_lower for platform in valid_platforms):
+            return False, "Please specify valid platforms such as 'web', 'mobile android', 'mobile ios', 'desktop windows', etc."
+        
+        # Context-aware validation: check if platforms align with description
+        if 'use_case_desc' in previous_answers:
+            desc_lower = previous_answers['use_case_desc'].lower()
+            
+            # If description mentions mobile but platforms don't include mobile
+            if any(word in desc_lower for word in ['mobile', 'phone', 'smartphone', 'app store']) and 'mobile' not in input_lower:
+                return False, "Your description mentions mobile functionality. Please include mobile platforms (e.g., 'mobile android', 'mobile ios') or clarify if this is web-only."
+            
+            # If description mentions web but platforms don't include web
+            if any(word in desc_lower for word in ['website', 'browser', 'web app', 'online']) and 'web' not in input_lower:
+                return False, "Your description mentions web functionality. Please include 'web' platform or clarify the target platforms."
+        
+        return True, ""
+    
+    return True, ""
+
+def generate_ai_summary(chat_data: dict) -> str:
+    """
+    Generate an AI-powered comprehensive summary of the use case.
+    In production, this would call Claude API. For now, we'll create a structured summary.
+    """
+    
+    # Extract data
+    name = chat_data.get('use_case_name', '')
+    description = chat_data.get('use_case_desc', '')
+    criticality = chat_data.get('business_criticality', '')
+    exposure = chat_data.get('app_exposure', '')
+    countries = chat_data.get('countries', '')
+    platforms = chat_data.get('platforms', '')
+    
+    # Map criticality to description
+    criticality_map = {
+        '1': 'Low Impact (Nice to have, minimal business disruption)',
+        '2': 'Medium-Low Impact (Some business impact, can wait for fixes)',
+        '3': 'Medium Impact (Moderate business impact, affects daily operations)',
+        '4': 'High Impact (Significant business impact, affects revenue/customers)', 
+        '5': 'Critical Impact (Mission-critical, severe business/revenue impact)'
+    }
+    
+    criticality_desc = criticality_map.get(criticality, f'Level {criticality}')
+    
+    # Format countries
+    countries_formatted = "Worldwide" if countries.lower().strip() == 'worldwide' else countries
+    
+    # Generate comprehensive summary
+    summary = f"""
+## 📋 Use Case Summary
+
+**{name}** is a {exposure.lower()}-facing application with **{criticality_desc.lower()}**.
+
+### 🎯 Purpose & Functionality
+{description}
+
+### 🌍 Geographic Scope
+This application will serve: **{countries_formatted}**
+
+### 💻 Target Platforms
+**{platforms}**
+
+### ⚡ Business Impact
+- **Criticality Level**: {criticality}/5 ({criticality_desc})
+- **Exposure**: {exposure.title()}-facing application
+- **Compliance Scope**: {countries_formatted} regulations will apply
+
+### 🔍 Key Considerations
+{"- **Internet-facing**: Enhanced security measures and public compliance requirements needed" if exposure.lower() == 'internet' else "- **Internal application**: Focus on internal security and data governance"}
+- **Multi-platform deployment**: Requires consistent experience across {platforms.lower()}
+{"- **Global compliance**: Must meet international regulations and data protection laws" if countries.lower().strip() == 'worldwide' else f"- **Regional compliance**: Must comply with {countries_formatted} specific regulations"}
+"""
+    
+    return summary.strip()
+
+def get_dynamic_question(question_key: str, previous_answers: dict) -> str:
+    """
+    Generate dynamic questions based on previous answers using AI context.
+    """
+    base_questions = {
+        "use_case_name": "Hello! Let's create a new use case together. What would you like to name your use case?",
+        "use_case_desc": "Great! Now, can you describe what this use case does? What are its main functionalities?",
+        "business_criticality": "How business-critical is this application? Please enter a number from 1 to 5:\n\n1 = Low Impact (Nice to have, minimal business disruption if down)\n2 = Medium-Low Impact (Some business impact, can wait for fixes)\n3 = Medium Impact (Moderate business impact, affects daily operations)\n4 = High Impact (Significant business impact, affects revenue/customers)\n5 = Critical Impact (Mission-critical, severe business/revenue impact if down)\n\nPlease enter your choice (1-5):",
+        "app_exposure": "Is this an internet-facing application or internal-only? Please type 'internet' for public-facing or 'internal' for internal-only:",
+        "countries": "Which countries will this application serve? You can enter comma-separated country names or type 'worldwide' for global coverage:",
+        "platforms": "What platforms will your application target? Please describe the platforms (e.g., web, mobile android, mobile ios, desktop windows, wearable android watch, wearable apple watch, etc.):"
+    }
+    
+    # Context-aware question modifications
+    if question_key == "platforms" and 'use_case_desc' in previous_answers:
+        desc = previous_answers['use_case_desc'].lower()
+        
+        if 'mobile' in desc or 'app' in desc:
+            return "I noticed your description mentions mobile functionality. What specific platforms will your application target? (e.g., mobile android, mobile ios, web, etc.)"
+        elif 'web' in desc or 'website' in desc or 'browser' in desc:
+            return "I see this is web-related. What platforms will your application target? (e.g., web, desktop, mobile web, etc.)"
+        elif 'desktop' in desc:
+            return "I noticed this involves desktop functionality. What platforms will your application target? (e.g., desktop windows, desktop mac, web, etc.)"
+    
+    return base_questions.get(question_key, "Please provide your answer:")
+
+if selected_tab == "Create or Update Product Use Case":
+    st.header("Create or Update a Product Use Case")
+    st.markdown("Use this section to create new product use cases or update existing ones. Once created, you can select and work with them in the **Product Planning** tab.")
+    
     # Show any saved use case message
     if st.session_state.get('use_case_saved_message'):
         st.success(st.session_state.use_case_saved_message)
         st.session_state.use_case_saved_message = None  # Clear after showing
     
-    with st.expander("Create a new Use Case"):
-        with st.form("use_case_form"):
-            use_case_name = st.text_input(
-                "Use case name (identifier)",
-                placeholder="e.g., checkout-service or product-search"
-            )
-            use_case_desc = st.text_area(
-                "Describe your product use case:",
-                placeholder="Enter a paragraph describing your product or feature..."
-            )
+    # Check if we just created a use case - if so, don't show creation methods
+    if 'simple_form_success' in st.session_state and st.session_state.simple_form_success:
+        st.info("To create another use case, refresh the page or click below.")
+        if st.button("Create Another Use Case", type="primary"):
+            del st.session_state.simple_form_success
+            st.rerun()
+    else:
+        # Choose creation method
+        st.subheader("Choose Your Creation Method")
+        creation_method = st.radio(
+            "How would you like to create your use case?",
+            options=["Simple Form (Name & Description)", "Interactive Chat (Detailed)"],
+            index=None,
+            horizontal=True,
+            help="Simple form for quick creation, Interactive chat for comprehensive details"
+        )
+        
+        st.markdown("---")
+        
+        if creation_method is None:
+            st.info("Please select a creation method above to get started.")
+        elif creation_method == "Simple Form (Name & Description)":
+            st.subheader("Simple Use Case Creation")
             
-            submitted = st.form_submit_button("Save Use Case")
+            with st.form("simple_use_case_form"):
+                use_case_name = st.text_input(
+                    "Use case name (identifier)",
+                    placeholder="e.g., checkout-service or product-search",
+                    help="This will be used as the identifier for your use case"
+                )
+                
+                use_case_desc = st.text_area(
+                    "Describe your product use case:",
+                    placeholder="Enter a paragraph describing your product or feature...",
+                    height=200,
+                    help="Provide a comprehensive description of the functionality and business value"
+                )
+                
+                submitted = st.form_submit_button("Create Use Case", type="primary", use_container_width=True)
+                
+                if submitted:
+                    if not use_case_name.strip() or not use_case_desc.strip():
+                        st.error("Please provide both a use case name and description.")
+                    else:
+                        slug = _slugify(use_case_name)
+                        uc_dir = os.path.join("../workspace", slug)
+                        os.makedirs(uc_dir, exist_ok=True)
+                        md_path = os.path.join(uc_dir, "usecase.md")
+                        
+                        simple_content = f"""# {use_case_name}
+
+## Description
+{use_case_desc}
+"""
+                        
+                        with open(md_path, 'w', encoding='utf-8') as f:
+                            f.write(simple_content)
+
+                        # Set as selected use case
+                        st.session_state.selected_usecase = slug
+                        try:
+                            entries = [d for d in os.listdir("../workspace") if os.path.isfile(os.path.join("../workspace", d, "usecase.md"))]
+                            if slug in entries:
+                                st.session_state.selected_usecase_index = entries.index(slug)
+                        except Exception:
+                            pass
+
+                        # Set success flag and success message
+                        st.session_state.simple_form_success = True
+                        st.session_state.use_case_saved_message = f"Use case '{use_case_name}' created successfully! Go to the Product Planning tab to work with it."
+                        st.rerun()
+        
+        elif creation_method == "Interactive Chat (Detailed)":
+            st.subheader("Interactive Chat Creation")
             
-            if submitted:
-                if not use_case_name.strip() or not use_case_desc.strip():
-                    st.warning("Please provide both a use case name and description.")
+            # Initialize chat state for use case creation
+            if 'chat_step' not in st.session_state:
+                st.session_state.chat_step = 0
+            if 'chat_data' not in st.session_state:
+                st.session_state.chat_data = {}
+            if 'chat_messages' not in st.session_state:
+                st.session_state.chat_messages = []
+
+            # Chat container
+            chat_container = st.container()
+            
+            # Define the conversation flow with AI-enhanced validation
+            chat_steps = [
+                {
+                    "key": "use_case_name",
+                    "type": "text",
+                    "placeholder": "e.g., checkout-service or product-search"
+                },
+                {
+                    "key": "use_case_desc",
+                    "type": "textarea",
+                    "placeholder": "Describe the functionality, features, and business purpose..."
+                },
+                {
+                    "key": "business_criticality",
+                    "type": "text",
+                    "placeholder": "Enter 1, 2, 3, 4, or 5"
+                },
+                {
+                    "key": "app_exposure",
+                    "type": "text",
+                    "placeholder": "internet or internal"
+                },
+                {
+                    "key": "countries",
+                    "type": "text",
+                    "placeholder": "e.g., United States, Canada, Germany or worldwide"
+                },
+                {
+                    "key": "platforms",
+                    "type": "text",
+                    "placeholder": "e.g., web, mobile android, mobile ios, desktop windows"
+                }
+            ]
+            
+            # Display chat messages
+            with chat_container:
+                # Show previous messages
+                for msg in st.session_state.chat_messages:
+                    with st.chat_message(msg["role"]):
+                        st.write(msg["content"])
+                
+                # Current question
+                if st.session_state.chat_step < len(chat_steps):
+                    current_step = chat_steps[st.session_state.chat_step]
+                    
+                    # Get dynamic question based on context
+                    dynamic_question = get_dynamic_question(current_step["key"], st.session_state.chat_data)
+                    
+                    # Show the question
+                    with st.chat_message("assistant"):
+                        st.write(dynamic_question)
+                    
+                    # Get user input based on type
+                    user_input = None
+                    
+                    if current_step["type"] == "text":
+                        user_input = st.text_input(
+                            "Your answer:",
+                            placeholder=current_step.get("placeholder", ""),
+                            key=f"chat_input_{st.session_state.chat_step}"
+                        )
+                    elif current_step["type"] == "textarea":
+                        user_input = st.text_area(
+                            "Your answer:",
+                            placeholder=current_step.get("placeholder", ""),
+                            height=100,
+                            key=f"chat_input_{st.session_state.chat_step}"
+                        )
+                    
+                    # Continue button
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    with col2:
+                        if st.button("Continue", key=f"continue_{st.session_state.chat_step}", use_container_width=True):
+                            # Use AI-based validation
+                            is_valid, error_message = validate_with_ai(current_step["key"], user_input, st.session_state.chat_data)
+                            
+                            if is_valid:
+                                # Store the answer
+                                st.session_state.chat_data[current_step["key"]] = user_input
+                                
+                                # Add to chat history
+                                st.session_state.chat_messages.append({
+                                    "role": "assistant",
+                                    "content": dynamic_question
+                                })
+                                
+                                # Format user response for display
+                                response_text = str(user_input)
+                                
+                                st.session_state.chat_messages.append({
+                                    "role": "user", 
+                                    "content": response_text
+                                })
+                                
+                                # Move to next step
+                                st.session_state.chat_step += 1
+                                st.rerun()
+                            else:
+                                # Show AI-generated error message
+                                st.error(error_message)
+                
                 else:
-                    slug = _slugify(use_case_name)
-                    uc_dir = os.path.join("../workspace", slug)
-                    os.makedirs(uc_dir, exist_ok=True)
-                    md_path = os.path.join(uc_dir, "usecase.md")
-                    with open(md_path, 'w', encoding='utf-8') as f:
-                        f.write(f"# {use_case_name}\n\n{use_case_desc}\n")
+                    # All questions answered - show summary and create use case
+                    # Double-check that we have all required data
+                    required_keys = ['use_case_name', 'use_case_desc', 'business_criticality', 'app_exposure', 'countries', 'platforms']
+                    has_all_data = all(key in st.session_state.chat_data and st.session_state.chat_data[key].strip() for key in required_keys)
+                    
+                    if has_all_data:
+                        with st.chat_message("assistant"):
+                            st.write("Excellent! I've gathered all the information. Let me summarize your use case:")
+                            
+                            # Generate and show AI-powered summary
+                            ai_summary = generate_ai_summary(st.session_state.chat_data)
+                            st.markdown(ai_summary)
+                            
+                            st.markdown("---")
+                            st.write("**Please review the summary above. What would you like to do?**")
+                        
+                        # Enhanced decision options
+                        st.markdown("### 🎯 Next Steps")
+                        
+                        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+                        
+                        with col1:
+                            if st.button("✅ Create Use Case", type="primary", use_container_width=True):
+                                # Create the use case (existing logic)
+                                use_case_name = st.session_state.chat_data['use_case_name']
+                                use_case_desc = st.session_state.chat_data['use_case_desc']
+                                business_criticality = int(st.session_state.chat_data['business_criticality'])
+                                app_exposure = st.session_state.chat_data['app_exposure'].lower()
+                                countries_text = st.session_state.chat_data['countries']
+                                platforms_text = st.session_state.chat_data['platforms']
+                                
+                                # Parse countries
+                                if countries_text.lower().strip() == 'worldwide':
+                                    countries_display = "Worldwide"
+                                else:
+                                    # Split by comma and clean up
+                                    countries_list = [c.strip() for c in countries_text.split(',') if c.strip()]
+                                    countries_display = ', '.join(countries_list)
+                                
+                                # Parse platforms
+                                platforms_list = [p.strip() for p in platforms_text.split(',') if p.strip()]
+                                platforms_display = '\n'.join([f"- {platform}" for platform in platforms_list])
+                                
+                                slug = _slugify(use_case_name)
+                                uc_dir = os.path.join("../workspace", slug)
+                                os.makedirs(uc_dir, exist_ok=True)
+                                md_path = os.path.join(uc_dir, "usecase.md")
+                                
+                                use_case_content = f"""# {use_case_name}
 
-                    # Mirror clone flow for use cases: set as selected and index
-                    st.session_state.selected_usecase = slug
+## Description
+{use_case_desc}
+
+## Business Criticality
+Level: **{business_criticality}**
+
+## Application Exposure
+**Type:** {app_exposure.title()}-facing
+
+## Geographic Coverage
+**Countries to serve:** {countries_display}
+
+## Target Platforms
+{platforms_display}
+
+## Compliance Considerations
+Based on the selected countries and exposure type, compliance requirements will be analyzed during the planning phase.
+
+*Note: {app_exposure.title()}-facing applications may have additional security and compliance requirements.*
+"""
+                                
+                                with open(md_path, 'w', encoding='utf-8') as f:
+                                    f.write(use_case_content)
+
+                                # Set as selected use case
+                                st.session_state.selected_usecase = slug
+                                try:
+                                    entries = [d for d in os.listdir("../workspace") if os.path.isfile(os.path.join("../workspace", d, "usecase.md"))]
+                                    if slug in entries:
+                                        st.session_state.selected_usecase_index = entries.index(slug)
+                                except Exception:
+                                    pass
+
+                                # Reset chat
+                                st.session_state.chat_step = 0
+                                st.session_state.chat_data = {}
+                                st.session_state.chat_messages = []
+                                
+                                # Success message
+                                st.session_state.use_case_saved_message = f"Use case '{use_case_name}' created successfully! Go to the Product Planning tab to work with it."
+                                st.rerun()
+                        
+                        with col2:
+                            if st.button("✏️ Edit Details", use_container_width=True):
+                                # Show edit options
+                                st.session_state.show_edit_options = True
+                                st.rerun()
+                                
+                        with col3:
+                            if st.button("🔄 Start Over", use_container_width=True):
+                                st.session_state.chat_step = 0
+                                st.session_state.chat_data = {}
+                                st.session_state.chat_messages = []
+                                st.rerun()
+                                
+                        with col4:
+                            if st.button("📝 Add More Info", use_container_width=True):
+                                st.info("Additional details can be added after creation in the Product Planning tab.")
+                        
+                        # Show edit options if requested
+                        if st.session_state.get('show_edit_options', False):
+                            st.markdown("### ✏️ What would you like to edit?")
+                            
+                            edit_col1, edit_col2, edit_col3 = st.columns(3)
+                            
+                            with edit_col1:
+                                if st.button("📝 Name & Description", use_container_width=True):
+                                    st.session_state.chat_step = 0
+                                    st.session_state.show_edit_options = False
+                                    st.rerun()
+                                    
+                                if st.button("🌍 Countries", use_container_width=True):
+                                    st.session_state.chat_step = 4
+                                    st.session_state.show_edit_options = False
+                                    st.rerun()
+                            
+                            with edit_col2:
+                                if st.button("⚡ Criticality Level", use_container_width=True):
+                                    st.session_state.chat_step = 2
+                                    st.session_state.show_edit_options = False
+                                    st.rerun()
+                                    
+                                if st.button("💻 Platforms", use_container_width=True):
+                                    st.session_state.chat_step = 5
+                                    st.session_state.show_edit_options = False
+                                    st.rerun()
+                            
+                            with edit_col3:
+                                if st.button("🔒 Exposure Type", use_container_width=True):
+                                    st.session_state.chat_step = 3
+                                    st.session_state.show_edit_options = False
+                                    st.rerun()
+                                    
+                                if st.button("❌ Cancel Edit", use_container_width=True):
+                                    st.session_state.show_edit_options = False
+                                    st.rerun()
+                    else:
+                        # Missing data - this should not happen, but safety check
+                        st.error("Missing required information. Please restart the chat.")
+    
+    # Show existing use cases
+    st.markdown("---")
+    st.subheader("Update Existing Use Cases")
+    workspace_path = "../workspace"
+    if os.path.exists(workspace_path) and os.path.isdir(workspace_path):
+        saved_use_cases = [d for d in os.listdir(workspace_path) if os.path.isdir(os.path.join(workspace_path, d))]
+        
+        if not saved_use_cases:
+            st.info("No saved use cases found. Create your first use case above!")
+        else:
+            # Initialize the session state for edit selection if not exists
+            if 'edit_usecase_selection' not in st.session_state:
+                st.session_state.edit_usecase_selection = "Select a use case to edit..."
+            
+            # Create a dropdown to select a use case to edit
+            usecase_options = ["Select a use case to edit..."] + saved_use_cases
+            
+            def on_edit_selection_change():
+                st.session_state.edit_usecase_selection = st.session_state.edit_usecase_selector
+            
+            selected_usecase_to_edit = st.selectbox(
+                "Choose a use case to edit:",
+                usecase_options,
+                index=usecase_options.index(st.session_state.edit_usecase_selection) if st.session_state.edit_usecase_selection in usecase_options else 0,
+                key="edit_usecase_selector",
+                on_change=on_edit_selection_change
+            )
+            
+            if selected_usecase_to_edit and selected_usecase_to_edit != "Select a use case to edit...":
+                usecase_md_path = os.path.join(workspace_path, selected_usecase_to_edit, "usecase.md")
+                
+                if os.path.exists(usecase_md_path):
                     try:
-                        entries = [d for d in os.listdir("../workspace") if os.path.isfile(os.path.join("../workspace", d, "usecase.md"))]
-                        if slug in entries:
-                            st.session_state.selected_usecase_index = entries.index(slug)
+                        with open(usecase_md_path, 'r', encoding='utf-8') as f:
+                            usecase_content = f.read()
+                        
+                        # Extract current name and description
+                        lines = usecase_content.split('\n')
+                        current_name = lines[0].replace('# ', '') if lines else selected_usecase_to_edit
+                        current_description = '\n'.join(lines[2:]) if len(lines) > 2 else ""
+                        
+                        st.markdown(f"### Editing: {current_name}")
+                        
+                        with st.form(f"edit_usecase_form_{selected_usecase_to_edit}"):
+                            updated_name = st.text_input(
+                                "Use case name", 
+                                value=current_name,
+                                key=f"edit_name_{selected_usecase_to_edit}"
+                            )
+                            updated_description = st.text_area(
+                                "Description", 
+                                value=current_description, 
+                                height=200,
+                                key=f"edit_desc_{selected_usecase_to_edit}"
+                            )
+                            
+                            col_save, col_cancel = st.columns(2)
+                            with col_save:
+                                save_btn = st.form_submit_button("💾 Update Use Case", type="primary")
+                            with col_cancel:
+                                cancel_btn = st.form_submit_button("❌ Cancel")
+                            
+                            if save_btn:
+                                if updated_name.strip() and updated_description.strip():
+                                    # Save the updated content
+                                    with open(usecase_md_path, 'w', encoding='utf-8') as f:
+                                        f.write(f"# {updated_name}\n\n{updated_description}\n")
+                                    st.session_state.use_case_saved_message = f"Use case '{updated_name}' updated successfully!"
+                                    # Reset the selection to default
+                                    st.session_state.edit_usecase_selection = "Select a use case to edit..."
+                                    st.rerun()
+                                else:
+                                    st.warning("Please provide both name and description.")
+                            
+                            if cancel_btn:
+                                # Reset the selection to default
+                                st.session_state.edit_usecase_selection = "Select a use case to edit..."
+                                st.rerun()
+                                
+                    except FileNotFoundError:
+                        st.error("Use case description file not found.")
+                    except Exception as e:
+                        st.error(f"Error reading use case description: {e}")
+                else:
+                    st.warning(f"Description file not found for use case '{selected_usecase_to_edit}'")
+            
+            # Show list of all use cases for reference
+            st.markdown("#### All Use Cases:")
+            for usecase in saved_use_cases:
+                usecase_md_path = os.path.join(workspace_path, usecase, "usecase.md")
+                if os.path.exists(usecase_md_path):
+                    try:
+                        with open(usecase_md_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        title = content.split('\n')[0].replace('# ', '') if content else usecase
+                        st.markdown(f"• **{title}** (`{usecase}`)")
                     except Exception:
-                        pass
+                        st.markdown(f"• `{usecase}`")
+                else:
+                    st.markdown(f"• `{usecase}` (no description file)")
+    else:
+        st.warning("The 'workspace' directory does not exist.")
 
-                    # Store success message in session state
-                    st.session_state.use_case_saved_message = f"Use case '{use_case_name}' saved successfully"
-                    st.rerun()
+elif selected_tab == "Product Planning":
+    selected_usecase = st.session_state.get('selected_usecase')
 
-    # --- 2. List Use Cases and Run Commands ---
+    # Show any saved use case message
+    if st.session_state.get('use_case_saved_message'):
+        st.success(st.session_state.use_case_saved_message)
+        st.session_state.use_case_saved_message = None  # Clear after showing
+
+    if st.session_state.get('last_generation_status'):
+        status_info = st.session_state.last_generation_status
+        if status_info['status'] == 'success':
+            st.success(status_info['message'])
+        elif status_info['status'] == 'error':
+            st.error(status_info['message'])
+        st.session_state.last_generation_status = None # Clear after displaying
+
+    # --- Use Case Selection Section ---
     st.header("Select the Use Case")
 
     workspace_path = "../workspace"
@@ -303,6 +1115,7 @@ if selected_tab == "Product Use Case":
 
         if not saved_use_cases:
             st.info("No saved use cases found in the workspace directory.")
+            st.markdown("👉 **Create a new use case** in the **Product Use Case** tab to get started.")
         else:
             def on_usecase_change():
                 st.session_state.selected_usecase = st.session_state.usecase_selector
@@ -385,17 +1198,7 @@ if selected_tab == "Product Use Case":
     else:
         st.warning("The 'workspace' directory does not exist.")
 
-elif selected_tab == "Product Planning":
-    selected_usecase = st.session_state.get('selected_usecase')
-
-    if st.session_state.get('last_generation_status'):
-        status_info = st.session_state.last_generation_status
-        if status_info['status'] == 'success':
-            st.success(status_info['message'])
-        elif status_info['status'] == 'error':
-            st.error(status_info['message'])
-        st.session_state.last_generation_status = None # Clear after displaying
-
+    # --- Generate Product Artifacts Section ---
     if selected_usecase:
         usecase_path = os.path.join("../workspace", selected_usecase)
 
@@ -531,9 +1334,6 @@ elif selected_tab == "Product Planning":
         if st.session_state.get('command_is_running'):
             show_generation_progress()
 
-    else:
-        st.info("Please select a use case first.")
-
 elif selected_tab == "Results":
     selected_usecase = st.session_state.get('selected_usecase')
     if selected_usecase:
@@ -549,9 +1349,9 @@ elif selected_tab == "Results":
 
         # --- View Markdown Files ---
         st.header("View Generated Reports")
-        
-        allowed_md_files = ["ra-fr.md", "ra-nfr.md", "ra-diagrams.md", "ra-sdd.md"]
-        report_names = ["Functional Requirements", "Non-Functional Requirements", "Architecture Diagrams", "System Design Document"]
+
+        allowed_md_files = ["ra-fr.md", "ra-nfr.md", "ra-diagrams.md", "ra-sdd.md","ra-security-controls.md"]
+        report_names = ["Functional Requirements", "Non-Functional Requirements", "Architecture Diagrams", "System Design Document","Security Controls Assessment"]
 
         # Create mapping between report names and filenames
         file_to_report_map = dict(zip(allowed_md_files, report_names))
