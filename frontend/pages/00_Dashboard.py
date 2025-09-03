@@ -3,13 +3,20 @@ import os
 import re
 import time
 from ui import apply_compact_styles
-
+from product_use_case import show_product_use_case_page, initialize_session_state
 
 st.set_page_config(
     page_title="Dashboard",
     page_icon="",
     layout="wide"
 )
+
+# Initialize session state
+initialize_session_state()
+
+# Add session state for expander
+if "create_project_expanded" not in st.session_state:
+    st.session_state.create_project_expanded = False
 
 apply_compact_styles()
 
@@ -61,31 +68,39 @@ else:
 
 
 # --- Create New Project ---
-with st.expander("Create a New Project", expanded=False):
-    with st.form("create_project_form"):
-        name = st.text_input("Project name (identifier)", placeholder="e.g., checkout-service or product-search")
-        desc = st.text_area("Describe your project", placeholder="Enter a paragraph describing your product or feature...")
-        col_create, col_open = st.columns([3, 1])
-        with col_create:
-            submit = st.form_submit_button("Create Project", type="primary")
-        with col_open:
-            auto_open = st.checkbox("Open after create", value=True)
+# Check if use_case_step is active to keep expander open
+# if st.session_state.get('use_case_step') in ["initial", "create_new", "select_existing"]:
+#     st.session_state.create_project_expanded = True
 
-        if submit:
-            if not name.strip() or not desc.strip():
-                st.warning("Please provide both a project name and description.")
-            else:
-                slug = _slugify(name)
-                workspace_dir = os.path.join("../workspace", slug)
-                os.makedirs(workspace_dir, exist_ok=True)
-                md_path = os.path.join(workspace_dir, "usecase.md")
-                with open(md_path, "w", encoding="utf-8") as f:
-                    f.write(f"# {name}\n\n{desc}\n")
+with st.expander("Create a New Project", expanded=st.session_state.create_project_expanded):
+    # Set expander to stay open during interaction
+    st.session_state.create_project_expanded = True
+    
+    # Show product use case form
+    show_product_use_case_page()
+        # name = st.text_input("Project name (identifier)", placeholder="e.g., checkout-service or product-search")
+        # desc = st.text_area("Describe your project", placeholder="Enter a paragraph describing your product or feature...")
+        # col_create, col_open = st.columns([3, 1])
+        # with col_create:
+        #     submit = st.form_submit_button("Create Project", type="primary")
+        # with col_open:
+        #     auto_open = st.checkbox("Open after create", value=True)
 
-                st.success(f"Project '{name}' created.")
-                st.session_state.selected_usecase = slug
-                if auto_open:
-                    st.switch_page("pages/10_Project_Dashboard.py")
+        # if submit:
+        #     if not name.strip() or not desc.strip():
+        #         st.warning("Please provide both a project name and description.")
+        #     else:
+        #         slug = _slugify(name)
+        #         workspace_dir = os.path.join("../workspace", slug)
+        #         os.makedirs(workspace_dir, exist_ok=True)
+        #         md_path = os.path.join(workspace_dir, "usecase.md")
+        #         with open(md_path, "w", encoding="utf-8") as f:
+        #             f.write(f"# {name}\n\n{desc}\n")
+
+        #         st.success(f"Project '{name}' created.")
+        #         st.session_state.selected_usecase = slug
+        #         if auto_open:
+        #             st.switch_page("pages/10_Project_Dashboard.py")
 
 
 # --- List Existing Projects ---
