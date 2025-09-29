@@ -84,7 +84,7 @@ product-planner/
 4. **Run the application**
    ```bash
    cd frontend
-   streamlit run Pilot.py --server.port 8502
+   streamlit run Pilot.py --server.port 8501
    ```
 
 5. **Access PILOT**

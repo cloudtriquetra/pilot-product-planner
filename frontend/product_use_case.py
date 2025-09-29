@@ -70,7 +70,7 @@ Return ONLY a JSON object in this exact format:
 }}"""
 
         message = client.messages.create(
-            model="claude-opus-4-1-20250805",
+            model="claude-sonnet-4-20250514",
             max_tokens=1024,
             temperature=0.1,
             system=system_prompt,
@@ -159,7 +159,7 @@ Always be friendly and guide them through their decision. Try to suggest critica
 
         with st.spinner("Thinking..."):
             message = client.messages.create(
-                model="claude-sonnet-4-20250514",  # Fixed model name
+                model="claude-sonnet-4-20250514",
                 max_tokens=1024,
                 temperature=0.7,
                 system=system_prompt,
@@ -456,7 +456,7 @@ def smart_data_processing(user_input):
                 patterns_matched.append('application_type')
         
         # Constraint detection (only for longer, more specific constraint descriptions)
-        constraint_keywords = ['response time', 'data privacy', 'mobile-friendly', 'gdpr', 'compliance', 'performance requirements', 'security requirements']
+        constraint_keywords = ['response time', 'data privacy', 'mobile-friendly', 'gdpr', 'compliance', 'nfr' 'performance requirements', 'security requirements']
         found_constraints = []
         
         # Only extract constraints if input contains specific constraint language

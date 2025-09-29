@@ -38,11 +38,11 @@ if selected_usecase:
             # Try to get PAT from Streamlit secrets, then environment variables, then use default
             pat_from_secrets = None
             try:
-                pat_from_secrets = st.secrets.get('AOD_PAT', None)
+                pat_from_secrets = st.secrets.get('ADO_PAT', None)
             except:
                 pass
             
-            pat_from_env = os.getenv('AOD_PAT', None)
+            pat_from_env = os.getenv('ADO_PAT', None)
             
             # Use secrets first, then env vars, then empty string (user will need to input)
             default_pat = pat_from_secrets or pat_from_env or ''
@@ -57,13 +57,13 @@ if selected_usecase:
         if not st.session_state.ado_settings['pat']:
             st.info("""
             💡 **Tip**: Set environment variables for secure access:
-            - `AOD_PAT`: Your Personal Access Token
+            - `AZURE_DEVOPS_PAT`: Your Personal Access Token
             - `AZURE_DEVOPS_ORG`: Your organization name  
             - `AZURE_DEVOPS_PROJECT`: Your project name
             
             Or add them to `.streamlit/secrets.toml`:
             ```
-            AOD_PAT = "your_pat_here"
+            ADO_PAT = "your_pat_here"
             ```
             """)
 
@@ -82,7 +82,7 @@ if selected_usecase:
             "PAT",
             value=st.session_state.ado_settings['pat'],
             type="password",
-            help="Personal Access Token with Work Items permissions (or set AOD_PAT env var)"
+            help="Personal Access Token with Work Items permissions (or set AZURE_DEVOPS_PAT env var)"
         )
 
         # Save settings
