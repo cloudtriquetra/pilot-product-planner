@@ -71,6 +71,8 @@ product-planner/
 2. **Install dependencies**
    ```bash
    pip install -r requirements.txt
+   export ANTHROPIC_API_KEY=your_anthropic_api_key_here
+   export AZURE_DEVOPS_PAT=your_ado_pat
    ```
 
 3. **Configure Claude AI CLI**
@@ -82,7 +84,7 @@ product-planner/
 4. **Run the application**
    ```bash
    cd frontend
-   streamlit run Pilot.py
+   streamlit run Pilot.py --server.port 8502
    ```
 
 5. **Access PILOT**

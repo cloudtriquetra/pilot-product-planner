@@ -5,6 +5,8 @@ import subprocess
 import threading
 import queue
 import time
+import atexit
+import signal
 from streamlit_mermaid import st_mermaid
 from ui import apply_compact_styles
 
@@ -16,6 +18,42 @@ st.set_page_config(
 )
 
 apply_compact_styles()
+
+# Add cleanup handler for background processes
+def cleanup_background_processes():
+    """Clean up any running background processes"""
+    if hasattr(st.session_state, 'cmd_runs'):
+        for run_key, info in st.session_state.cmd_runs.items():
+            proc = info.get('process')
+            if proc and proc.poll() is None:  # Process is still running
+                try:
+                    proc.terminate()
+                    # Give it a moment to terminate gracefully
+                    proc.wait(timeout=2)
+                except (subprocess.TimeoutExpired, Exception):
+                    # Force kill if it doesn't terminate gracefully
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=1)
+                    except:
+                        pass
+
+# Register cleanup function
+atexit.register(cleanup_background_processes)
+
+# Register signal handlers for proper cleanup (only in main thread)
+def signal_handler(signum, frame):
+    cleanup_background_processes()
+
+# Only register signal handlers if we're in the main thread
+import threading
+if threading.current_thread() is threading.main_thread():
+    try:
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+    except ValueError:
+        # Signal handling not available in this context, skip it
+        pass
 
 @st.cache_data(ttl=60)
 def get_claude_cli_status():
@@ -73,28 +111,50 @@ def _reader_thread(proc: subprocess.Popen, q: "queue.Queue[str]") -> None:
         q.put(f"---RC:{rc}---")
     except Exception:
         q.put("---RC:1---")
+    finally:
+        # Ensure cleanup happens even if there's an exception
+        try:
+            if proc.stdout and not proc.stdout.closed:
+                proc.stdout.close()
+        except:
+            pass
 
 
 def start_background(run_key: str, shell_cmd: str) -> None:
     if 'cmd_runs' not in st.session_state:
         st.session_state.cmd_runs = {}
-    # Prevent duplicate run keys
-    if run_key in st.session_state.cmd_runs and st.session_state.cmd_runs[run_key].get('process') and st.session_state.cmd_runs[run_key]['process'].poll() is None:
-        return
+    
+    # Clean up any existing process with the same key
+    if run_key in st.session_state.cmd_runs:
+        existing_proc = st.session_state.cmd_runs[run_key].get('process')
+        if existing_proc and existing_proc.poll() is None:
+            try:
+                existing_proc.terminate()
+                existing_proc.wait(timeout=2)
+            except:
+                try:
+                    existing_proc.kill()
+                except:
+                    pass
+    
     q: "queue.Queue[str]" = queue.Queue()
-    proc = subprocess.Popen(
-        shell_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, cwd="../", bufsize=1, universal_newlines=True
-    )
-    th = threading.Thread(target=_reader_thread, args=(proc, q), daemon=True)
-    th.start()
-    st.session_state.cmd_runs[run_key] = {
-        'process': proc,
-        'q': q,
-        'log': '',
-        'return_code': None,
-        'started_at': time.time(),
-    }
+    try:
+        proc = subprocess.Popen(
+            shell_cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, cwd="../", bufsize=1, universal_newlines=True,
+            preexec_fn=os.setsid if hasattr(os, 'setsid') else None
+        )
+        th = threading.Thread(target=_reader_thread, args=(proc, q), daemon=True)
+        th.start()
+        st.session_state.cmd_runs[run_key] = {
+            'process': proc,
+            'q': q,
+            'log': '',
+            'return_code': None,
+            'started_at': time.time(),
+        }
+    except Exception as e:
+        st.error(f"Failed to start background process: {e}")
 
 
 @st.fragment

@@ -35,28 +35,54 @@ if selected_usecase:
 
         # Store ADO settings in session state
         if 'ado_settings' not in st.session_state:
+            # Try to get PAT from Streamlit secrets, then environment variables, then use default
+            pat_from_secrets = None
+            try:
+                pat_from_secrets = st.secrets.get('AOD_PAT', None)
+            except:
+                pass
+            
+            pat_from_env = os.getenv('AOD_PAT', None)
+            
+            # Use secrets first, then env vars, then empty string (user will need to input)
+            default_pat = pat_from_secrets or pat_from_env or ''
+            
             st.session_state.ado_settings = {
-                'organization': 'pandeymohit',
-                'project': 'devsecops',
-                'pat': '',
+                'organization': os.getenv('AZURE_DEVOPS_ORG', 'pandeymohit'),
+                'project': os.getenv('AZURE_DEVOPS_PROJECT', 'devsecops'),
+                'pat': default_pat,
             }
+
+        # Show environment variable info
+        if not st.session_state.ado_settings['pat']:
+            st.info("""
+            💡 **Tip**: Set environment variables for secure access:
+            - `AOD_PAT`: Your Personal Access Token
+            - `AZURE_DEVOPS_ORG`: Your organization name  
+            - `AZURE_DEVOPS_PROJECT`: Your project name
+            
+            Or add them to `.streamlit/secrets.toml`:
+            ```
+            AOD_PAT = "your_pat_here"
+            ```
+            """)
 
         # ADO Configuration
         organization = st.text_input(
             "Organization",
             value=st.session_state.ado_settings['organization'],
-            help="Your Azure DevOps organization name"
+            help="Your Azure DevOps organization name (or set AZURE_DEVOPS_ORG env var)"
         )
         project = st.text_input(
             "Project",
             value=st.session_state.ado_settings['project'],
-            help="Your project name"
+            help="Your project name (or set AZURE_DEVOPS_PROJECT env var)"
         )
         pat = st.text_input(
             "PAT",
             value=st.session_state.ado_settings['pat'],
             type="password",
-            help="Personal Access Token with Work Items permissions"
+            help="Personal Access Token with Work Items permissions (or set AOD_PAT env var)"
         )
 
         # Save settings

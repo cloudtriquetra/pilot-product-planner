@@ -159,7 +159,7 @@ Always be friendly and guide them through their decision. Try to suggest critica
 
         with st.spinner("Thinking..."):
             message = client.messages.create(
-                model="claude-opus-4-1-20250805",  # Fixed model name
+                model="claude-sonnet-4-20250514",  # Fixed model name
                 max_tokens=1024,
                 temperature=0.7,
                 system=system_prompt,
@@ -399,34 +399,151 @@ def smart_data_processing(user_input):
             st.session_state.use_case_data[field] = value.strip()
             extracted_fields.append(field)
     
-    # If no data was extracted and we're in sequential mode, fall back to current step
+    # Enhanced fallback with pattern matching for complex inputs
     if not extracted_fields:
         current_step = st.session_state.collection_step
-        if current_step == "name":
-            # For name, always accept the input as the project name
-            st.session_state.use_case_data[current_step] = user_input.strip()
-            extracted_fields.append(current_step)
-        else:
-            # For other fields, try keyword detection
-            lower_input = user_input.lower()
-            
-            # Simple keyword-based extraction as fallback
-            if current_step == "countries" and any(country in lower_input for country in ["usa", "us", "united states", "uk", "germany", "india", "canada", "australia", "france", "spain", "italy", "japan", "china", "brazil", "global", "worldwide", "europe", "asia"]):
-                st.session_state.use_case_data[current_step] = user_input.strip()
-                extracted_fields.append(current_step)
-            elif current_step == "platforms" and any(platform in lower_input for platform in ["web", "mobile", "desktop", "ios", "android", "windows", "mac", "linux", "browser"]):
-                st.session_state.use_case_data[current_step] = user_input.strip()
-                extracted_fields.append(current_step)
-            elif current_step == "application_type" and any(app_type in lower_input for app_type in ["internal", "external", "public", "private", "employee", "customer", "client"]):
-                st.session_state.use_case_data[current_step] = user_input.strip()
-                extracted_fields.append(current_step)
-            elif current_step == "criticality" and any(crit in lower_input for crit in ["1", "2", "3", "4", "5", "low", "medium", "high", "critical"]):
-                st.session_state.use_case_data[current_step] = user_input.strip()
-                extracted_fields.append(current_step)
+        lower_input = user_input.lower()
+        
+        # Try multiple extraction patterns
+        patterns_matched = []
+        
+        # Country detection (improved with context checking)
+        country_patterns = {
+            'sg': 'Singapore', 'uk': 'United Kingdom', 'us': 'United States',
+            'usa': 'United States', 'germany': 'Germany', 'canada': 'Canada',
+            'australia': 'Australia', 'france': 'France', 'spain': 'Spain',
+            'italy': 'Italy', 'japan': 'Japan', 'china': 'China', 'brazil': 'Brazil'
+        }
+        
+        found_countries = []
+        
+        # Special handling for 'in' - only if it's clearly a country reference
+        if ' in ' in lower_input:
+            # Check if 'in' is followed by context that suggests it's India
+            in_contexts = ['in india', 'in mumbai', 'in delhi', 'in bangalore', 'in chennai']
+            if any(context in lower_input for context in in_contexts):
+                found_countries.append('India')
+        
+        # Check other country codes with word boundaries to avoid false positives
+        import re
+        for code, country in country_patterns.items():
+            # Use word boundaries to avoid matching 'us' in 'customers'
+            if re.search(r'\b' + re.escape(code) + r'\b', lower_input):
+                found_countries.append(country)
+        
+        if found_countries and ('countries' not in st.session_state.use_case_data or not st.session_state.use_case_data['countries']):
+            st.session_state.use_case_data['countries'] = ', '.join(found_countries)
+            patterns_matched.append('countries')
+        
+        # Platform detection (improved)
+        platform_keywords = ['cloud', 'aws', 'azure', 'gcp', 'web', 'mobile', 'desktop', 'ios', 'android']
+        found_platforms = []
+        for platform in platform_keywords:
+            if platform in lower_input:
+                found_platforms.append(platform)
+        
+        if found_platforms and ('platforms' not in st.session_state.use_case_data or not st.session_state.use_case_data['platforms']):
+            st.session_state.use_case_data['platforms'] = ', '.join(found_platforms)
+            patterns_matched.append('platforms')
+        
+        # Application type detection (internal vs external)
+        if 'application_type' not in st.session_state.use_case_data or not st.session_state.use_case_data['application_type']:
+            if any(phrase in lower_input for phrase in ['internal application', 'internal app', 'for internal', 'employee', 'staff']):
+                st.session_state.use_case_data['application_type'] = 'Internal'
+                patterns_matched.append('application_type')
+            elif any(phrase in lower_input for phrase in ['external application', 'external app', 'for external', 'public', 'customer', 'client']):
+                st.session_state.use_case_data['application_type'] = 'External'
+                patterns_matched.append('application_type')
+        
+        # Constraint detection (only for longer, more specific constraint descriptions)
+        constraint_keywords = ['response time', 'data privacy', 'mobile-friendly', 'gdpr', 'compliance', 'performance requirements', 'security requirements']
+        found_constraints = []
+        
+        # Only extract constraints if input contains specific constraint language
+        if len(user_input.split()) > 5:  # Only for longer inputs
+            for constraint in constraint_keywords:
+                if constraint in lower_input:
+                    found_constraints.append(constraint)
+        
+        if found_constraints and ('constraints' not in st.session_state.use_case_data or not st.session_state.use_case_data['constraints']):
+            constraint_text = f"{', '.join(found_constraints)}"
+            st.session_state.use_case_data['constraints'] = constraint_text
+            patterns_matched.append('constraints')
+        
+        # Name extraction (intelligent inference)
+        if 'name' not in st.session_state.use_case_data or not st.session_state.use_case_data['name']:
+            # Look for potential project names at the start of input
+            input_words = user_input.strip().split()
+            if len(input_words) >= 2:
+                # Check for patterns like "Runtime detection", "Security system", etc.
+                first_two_words = ' '.join(input_words[:2])
+                first_three_words = ' '.join(input_words[:3]) if len(input_words) >= 3 else first_two_words
+                
+                # If it starts with descriptive terms, use as name
+                name_indicators = ['runtime', 'security', 'detection', 'monitoring', 'tracking', 'analysis', 'management', 'system', 'platform', 'application', 'service', 'tool']
+                if any(word.lower() in first_two_words.lower() for word in name_indicators):
+                    # Use first 2-3 words as project name
+                    project_name = first_three_words if any(word in first_three_words.lower() for word in ['system', 'platform', 'service', 'tool', 'application']) else first_two_words
+                    st.session_state.use_case_data['name'] = project_name.title()
+                    patterns_matched.append('name')
+        
+        # Description extraction (only for longer, more descriptive text)
+        if 'description' not in st.session_state.use_case_data or not st.session_state.use_case_data['description']:
+            # Only use as description if input is substantial (more than just a name)
+            action_words = ['detect', 'block', 'monitor', 'track', 'analyze', 'process', 'manage', 'create', 'build']
+            # Require longer input with action words to avoid using short names as descriptions
+            if len(user_input.split()) > 4 and any(word in lower_input for word in action_words):
+                st.session_state.use_case_data['description'] = user_input.strip()
+                patterns_matched.append('description')
+        
+        # If we're in sequential mode and no patterns matched, accept for current step
+        if not patterns_matched:
+            if current_step == "name":
+                # For name step, try to extract from first few words or use full input
+                input_words = user_input.strip().split()
+                if len(input_words) >= 2:
+                    # Use first 2-3 words as potential name
+                    first_two_words = ' '.join(input_words[:2])
+                    st.session_state.use_case_data[current_step] = first_two_words.title()
+                else:
+                    st.session_state.use_case_data[current_step] = user_input.strip().title()
+                patterns_matched.append(current_step)
             else:
-                # Default fallback - accept any input for the current step
-                st.session_state.use_case_data[current_step] = user_input.strip()
-                extracted_fields.append(current_step)
+                # Enhanced keyword matching for current step
+                if current_step == "countries":
+                    # Be more specific about country detection in fallback
+                    country_names = ["singapore", "india", "united kingdom", "united states", "germany", "canada", "australia", "france", "spain", "italy", "japan", "china", "brazil"]
+                    if any(word in lower_input for word in ["country", "countries", "deploy", "region"]) or any(country in lower_input for country in country_names):
+                        st.session_state.use_case_data[current_step] = user_input.strip()
+                        patterns_matched.append(current_step)
+                elif current_step == "platforms":
+                    if any(word in lower_input for word in ["platform", "cloud", "web", "mobile", "app", "application"]):
+                        st.session_state.use_case_data[current_step] = user_input.strip()
+                        patterns_matched.append(current_step)
+                elif current_step == "application_type":
+                    if any(word in lower_input for word in ["internal", "external", "public", "private", "employee", "customer"]):
+                        # Set proper application type based on keywords
+                        if any(word in lower_input for word in ["internal", "employee"]):
+                            st.session_state.use_case_data[current_step] = "Internal"
+                        elif any(word in lower_input for word in ["external", "public", "customer"]):
+                            st.session_state.use_case_data[current_step] = "External"
+                        else:
+                            st.session_state.use_case_data[current_step] = user_input.strip()
+                        patterns_matched.append(current_step)
+                elif current_step == "constraints":
+                    if any(word in lower_input for word in ["constraint", "requirement", "need", "must", "should", "time", "security", "performance"]):
+                        st.session_state.use_case_data[current_step] = user_input.strip()
+                        patterns_matched.append(current_step)
+                elif current_step == "criticality":
+                    if any(word in lower_input for word in ["critical", "important", "priority", "urgent", "low", "medium", "high", "1", "2", "3", "4", "5"]):
+                        st.session_state.use_case_data[current_step] = user_input.strip()
+                        patterns_matched.append(current_step)
+                else:
+                    # Default fallback
+                    st.session_state.use_case_data[current_step] = user_input.strip()
+                    patterns_matched.append(current_step)
+        
+        extracted_fields = patterns_matched
     
     # Find next missing field
     next_field, next_question = get_next_missing_field(st.session_state.use_case_data)
