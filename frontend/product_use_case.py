@@ -45,9 +45,9 @@ Required fields:
 - name: Project name
 - description: What the project does
 - countries: Deployment countries (for compliance)
-- platforms: Target platforms (web, mobile, desktop, etc.)
+- platforms: Target platforms (web, mobile, or desktop)
 - application_type: Internal or External
-- constraints: Technical and business constraints
+- constraints: Technical and business constraints (ONLY extract when explicitly asked for constraints)
 - criticality: Business criticality level (1-5 scale)
 
 IMPORTANT: 
@@ -55,6 +55,7 @@ IMPORTANT:
 - If a field is not mentioned or unclear, set it to null
 - Don't guess or infer beyond what's clearly stated
 - If current context exists, don't re-extract already captured data unless user is updating it
+- For constraints: Only extract if the user is specifically answering a constraints question
 
 {current_context}
 
@@ -142,9 +143,9 @@ Current collection requirements:
 - Name: Project name
 - Description: What the project does
 - Countries: Deployment countries (for compliance)
-- Platforms: Target platforms (web, mobile, desktop, etc.)
+- Platforms: Target platforms (web, mobile, or desktop)
 - Application type: Internal or External
-- Constraints: Technical and business constraints (Response time, Data Privacy & Protection, Data compliance)
+- Constraints: Any constraints or requirements (technical, business, regulatory, performance, security, budget, timeline, etc.)
 - Criticality: Business criticality level (1-5 scale)
 
 Be conversational but concise. When users provide comprehensive information, acknowledge what you've extracted and ask for any missing pieces. Extract data intelligently and ask the next relevant question based on what's missing."""
@@ -288,21 +289,19 @@ def generate_and_save_use_case():
         
         # Generate comprehensive prompt
         prompt = f"""# {data.get('name', 'Unnamed Project')}
+        
 
 ## Project Overview
 - **Description:** {data.get('description', 'N/A')}
+
+## Technical & Business Details
 - **Target Platforms:** {data.get('platforms', 'N/A')}
-
-## Technical & Business Constraints
+- **Deployment Countries:** {data.get('countries', 'N/A')}
+- **Application Type:** {data.get('application_type', 'N/A')}
 - **Business Criticality:** {data.get('criticality', 'N/A')}
-- **Application Type:** {data.get('application_type', 'N/A')} application requirements
-- **Constraints:** {data.get('constraints', 'N/A')}
 
-## Compliance Requirements
-Based on the target countries **({data.get('countries', 'N/A')})**, relevant compliance are required.
-- GDPR (if applicable to EU countries)
-- Data protection laws
-- Privacy regulations
+## Constraints / Requirements
+- {data.get('constraints', 'N/A')}
 - Industry-specific compliance requirements
 
 ## Please provide a comprehensive analysis covering:
@@ -336,13 +335,13 @@ Based on the target countries **({data.get('countries', 'N/A')})**, relevant com
 def get_next_missing_field(use_case_data):
     """Get the next missing required field"""
     required_fields = [
-        ("name", "What's the name of your project?"),
-        ("description", "What does your project do? Briefly describe its main functionality."),
-        ("countries", "Which countries will this project be deployed in? (This helps determine compliance requirements)"),
-        ("platforms", "What platforms will you target? (e.g., web, mobile, desktop)"),
-        ("application_type", "Is this an Internal application (for company employees) or External application (for public/customers)?"),
-        ("constraints", "What are your main technical and business constraints? Consider: Response time requirements, Data privacy, Mobile-friendly interface, GDPR and Data policy compliant."),
-        ("criticality", "What's the business criticality level? (1=Low, 2=Medium-Low, 3=Medium, 4=High, 5=Critical)")
+        ("name", "**What's the name of your project?**"),
+        ("description", "**What does your project do?** Briefly describe its main functionality."),
+        ("countries", "**Which countries will this project be deployed in?** (This helps determine compliance requirements)"),
+        ("platforms", "**What platforms will you target?** (web, mobile, or desktop)"),
+        ("application_type", "**Is this an Internal application (for company employees) or External application (for public/customers)?**"),
+        ("constraints", "**What are your main constraints or requirements for this project?**\n\nPlease specify any technical, business, regulatory, performance, security, budget, timeline, or other constraints that need to be considered."),
+        ("criticality", "**What's the business criticality level?** (1=Low, 2=Medium-Low, 3=Medium, 4=High, 5=Critical)")
     ]
     
     for field, question in required_fields:
@@ -387,6 +386,16 @@ def display_extracted_summary(extracted_fields, use_case_data):
 
 def smart_data_processing(user_input):
     """Process user input intelligently, extracting multiple fields if present"""
+    
+    # Special handling for the first question (project name)
+    if 'name' not in st.session_state.use_case_data or not st.session_state.use_case_data['name']:
+        # For the first question, focus on getting just the name
+        st.session_state.use_case_data['name'] = user_input.strip()
+        st.session_state.collection_step = "description"
+        
+        return f"✅ **Project Name:** {user_input.strip()}\n\n📝 **What does your project do?** \n\nPlease briefly describe its main functionality and purpose."
+    
+    # For subsequent questions, use the full extraction logic
     # Extract data using Claude
     extracted_data = extract_data_from_input(user_input, st.session_state.use_case_data)
     
@@ -435,12 +444,18 @@ def smart_data_processing(user_input):
             st.session_state.use_case_data['countries'] = ', '.join(found_countries)
             patterns_matched.append('countries')
         
-        # Platform detection (improved)
-        platform_keywords = ['cloud', 'aws', 'azure', 'gcp', 'web', 'mobile', 'desktop', 'ios', 'android']
+        # Platform detection (mobile/web/desktop)
+        platform_keywords = ['web', 'mobile', 'desktop', 'ios', 'android']
         found_platforms = []
         for platform in platform_keywords:
             if platform in lower_input:
-                found_platforms.append(platform)
+                if platform in ['ios', 'android']:
+                    found_platforms.append('mobile')
+                else:
+                    found_platforms.append(platform)
+        
+        # Remove duplicates
+        found_platforms = list(set(found_platforms))
         
         if found_platforms and ('platforms' not in st.session_state.use_case_data or not st.session_state.use_case_data['platforms']):
             st.session_state.use_case_data['platforms'] = ', '.join(found_platforms)
@@ -455,38 +470,8 @@ def smart_data_processing(user_input):
                 st.session_state.use_case_data['application_type'] = 'External'
                 patterns_matched.append('application_type')
         
-        # Constraint detection (only for longer, more specific constraint descriptions)
-        constraint_keywords = ['response time', 'data privacy', 'mobile-friendly', 'gdpr', 'compliance', 'nfr' 'performance requirements', 'security requirements']
-        found_constraints = []
-        
-        # Only extract constraints if input contains specific constraint language
-        if len(user_input.split()) > 5:  # Only for longer inputs
-            for constraint in constraint_keywords:
-                if constraint in lower_input:
-                    found_constraints.append(constraint)
-        
-        if found_constraints and ('constraints' not in st.session_state.use_case_data or not st.session_state.use_case_data['constraints']):
-            constraint_text = f"{', '.join(found_constraints)}"
-            st.session_state.use_case_data['constraints'] = constraint_text
-            patterns_matched.append('constraints')
-        
-        # Name extraction (intelligent inference)
-        if 'name' not in st.session_state.use_case_data or not st.session_state.use_case_data['name']:
-            # Look for potential project names at the start of input
-            input_words = user_input.strip().split()
-            if len(input_words) >= 2:
-                # Check for patterns like "Runtime detection", "Security system", etc.
-                first_two_words = ' '.join(input_words[:2])
-                first_three_words = ' '.join(input_words[:3]) if len(input_words) >= 3 else first_two_words
-                
-                # If it starts with descriptive terms, use as name
-                name_indicators = ['runtime', 'security', 'detection', 'monitoring', 'tracking', 'analysis', 'management', 'system', 'platform', 'application', 'service', 'tool']
-                if any(word.lower() in first_two_words.lower() for word in name_indicators):
-                    # Use first 2-3 words as project name
-                    project_name = first_three_words if any(word in first_three_words.lower() for word in ['system', 'platform', 'service', 'tool', 'application']) else first_two_words
-                    st.session_state.use_case_data['name'] = project_name.title()
-                    patterns_matched.append('name')
-        
+        # Note: Constraints are now handled as a separate dedicated question
+        # and are not automatically extracted from other responses
         # Description extraction (only for longer, more descriptive text)
         if 'description' not in st.session_state.use_case_data or not st.session_state.use_case_data['description']:
             # Only use as description if input is substantial (more than just a name)
@@ -517,8 +502,16 @@ def smart_data_processing(user_input):
                         st.session_state.use_case_data[current_step] = user_input.strip()
                         patterns_matched.append(current_step)
                 elif current_step == "platforms":
-                    if any(word in lower_input for word in ["platform", "cloud", "web", "mobile", "app", "application"]):
-                        st.session_state.use_case_data[current_step] = user_input.strip()
+                    if any(word in lower_input for word in ["web", "mobile", "desktop", "app", "application", "ios", "android"]):
+                        # Map to platform options
+                        if any(word in lower_input for word in ["ios", "android", "mobile"]):
+                            st.session_state.use_case_data[current_step] = "mobile"
+                        elif "web" in lower_input:
+                            st.session_state.use_case_data[current_step] = "web"
+                        elif "desktop" in lower_input:
+                            st.session_state.use_case_data[current_step] = "desktop"
+                        else:
+                            st.session_state.use_case_data[current_step] = user_input.strip()
                         patterns_matched.append(current_step)
                 elif current_step == "application_type":
                     if any(word in lower_input for word in ["internal", "external", "public", "private", "employee", "customer"]):
@@ -531,9 +524,9 @@ def smart_data_processing(user_input):
                             st.session_state.use_case_data[current_step] = user_input.strip()
                         patterns_matched.append(current_step)
                 elif current_step == "constraints":
-                    if any(word in lower_input for word in ["constraint", "requirement", "need", "must", "should", "time", "security", "performance"]):
-                        st.session_state.use_case_data[current_step] = user_input.strip()
-                        patterns_matched.append(current_step)
+                    # When specifically asking for constraints, accept the input as provided
+                    st.session_state.use_case_data[current_step] = user_input.strip()
+                    patterns_matched.append(current_step)
                 elif current_step == "criticality":
                     if any(word in lower_input for word in ["critical", "important", "priority", "urgent", "low", "medium", "high", "1", "2", "3", "4", "5"]):
                         st.session_state.use_case_data[current_step] = user_input.strip()
@@ -555,10 +548,10 @@ def smart_data_processing(user_input):
         if len(extracted_fields) > 1:
             response = f"Excellent! I captured multiple details from your message:\n\n"
             response += display_extracted_summary(extracted_fields, st.session_state.use_case_data)
-            response += f"\nNext: {next_question}"
+            response += f"\n\n**Next:** {next_question}"
         elif len(extracted_fields) == 1:
             response = display_extracted_summary(extracted_fields, st.session_state.use_case_data)
-            response += f"\n{next_question}"
+            response += f"\n\n{next_question}"
         else:
             response = next_question
         
@@ -587,7 +580,7 @@ def interactive_data_collection():
     if not st.session_state.onboarding_chat:
         welcome_msg = {
             "role": "assistant", 
-            "content": "Tell me about your project. You can provide multiple details in one message."
+            "content": "🏷️ **What's the name of your project?**\n\nPlease provide a clear, descriptive name for your project."
         }
         st.session_state.onboarding_chat.append(welcome_msg)
     
