@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "title": "Functional Requirements Schema",
+  "description": "Schema for functional requirements specification with user stories and acceptance criteria",
+  "properties": {
+    "context": {
+      "type": "string",
+      "description": "Brief context summary (≤100 words)",
+      "maxLength": 500
+    },
+    "userStories": {
+      "type": "array",
+      "description": "Collection of user stories",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^US-\\d+$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "asA": {
+            "type": "string"
+          },
+          "iWantTo": {
+            "type": "string"
+          },
+          "soThat": {
+            "type": "string"
+          },
+          "storyPoints": {
+            "type": "integer",
+            "enum": [1, 2, 3, 5, 8, 13]
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["Critical", "High", "Medium", "Low"]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedUserStories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^US-\\d+$"
+            }
+          },
+          "epic": {
+            "type": "string"
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "description": "2-5 acceptance criteria items",
+            "minItems": 2,
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^AC-\\d+$"
+                },
+                "given": {
+                  "type": "string"
+                },
+                "when": {
+                  "type": "string"
+                },
+                "then": {
+                  "type": "string"
+                }
+              },
+              "required": ["id", "given", "when", "then"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["id", "title", "asA", "iWantTo", "soThat", "storyPoints", "priority", "tags", "acceptanceCriteria"],
+        "additionalProperties": false
+      }
+    },
+    "errorAndEdgeCases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "traceability": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "requirementId": {
+            "type": "string",
+            "pattern": "^FR-\\d+$"
+          },
+          "userStoryId": {
+            "type": "string",
+            "pattern": "^US-\\d+$"
+          },
+          "acceptanceCriteriaIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^AC-\\d+$"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": ["requirementId", "userStoryId", "acceptanceCriteriaIds", "notes"],
+        "additionalProperties": false
+      }
+    },
+    "ado": {
+      "type": "object",
+      "properties": {
+        "epics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tasksByUserStory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "userStoryId": {
+                "type": "string",
+                "pattern": "^US-\\d+$"
+              },
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["userStoryId", "tasks"],
+            "additionalProperties": false
+          }
+        },
+        "definitionOfDone": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sprintPlanning": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["epics", "features", "tasksByUserStory", "definitionOfDone", "sprintPlanning"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["context", "userStories", "errorAndEdgeCases", "assumptions", "openQuestions", "traceability", "ado"],
+  "additionalProperties": false
+}

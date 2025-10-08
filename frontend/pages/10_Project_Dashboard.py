@@ -9,6 +9,9 @@ import atexit
 import signal
 from streamlit_mermaid import st_mermaid
 from ui import apply_compact_styles
+import sys
+sys.path.append('..')
+from generate_excel_from_csv import create_excel_from_csv
 
 
 st.set_page_config(
@@ -295,8 +298,8 @@ st.subheader("📄 Results")
 if not os.path.isdir(usecase_path):
     st.info("Project folder not found.")
 else:
-    allowed_md_files = ["ra-fr.md", "ra-nfr.md", "ra-diagrams.md", "ra-sdd.md", "ra-security-controls.md"]
-    report_names = ["Functional Requirements", "Non-Functional Requirements", "Architecture Diagrams", "System Design Document", "Security Controls Assessment"]
+    allowed_md_files = ["ra-fr.md", "ra-nfr.md", "ra-diagrams.md", "ra-sdd.md", "ra-security-controls.md", "ra-business-case.md"]
+    report_names = ["Functional Requirements", "Non-Functional Requirements", "Architecture Diagrams", "System Design Document", "Security Controls Assessment", "Business Case"]
     file_to_report_map = dict(zip(allowed_md_files, report_names))
     report_to_file_map = dict(zip(report_names, allowed_md_files))
 
@@ -345,6 +348,52 @@ else:
                         st_mermaid(mermaid_code)
                     else:
                         st.markdown(part, unsafe_allow_html=True)
+                
+                # Add Excel download feature for Business Case reports
+                if "ra-business-case.md" in selected_md_file:
+                    st.markdown("---")
+                    st.markdown("### 📊 Export to Excel")
+                    
+                    # Check if CSV file exists
+                    csv_path = os.path.join(usecase_path, "ra-business-case.csv")
+                    if os.path.exists(csv_path):
+                        col1, col2 = st.columns([1, 3])
+                        
+                        with col1:
+                            if st.button("📥 Generate & Download Excel", type="primary"):
+                                try:
+                                    # Get project name safely
+                                    project_name = getattr(st.session_state, 'selected_solution', None) or 'business_case'
+                                    
+                                    # Generate Excel file
+                                    excel_filename = create_excel_from_csv(usecase_path, project_name)
+                                    
+                                    if excel_filename and os.path.exists(excel_filename):
+                                        st.success("✅ Excel file generated successfully!")
+                                        
+                                        # Read the Excel file for download
+                                        with open(excel_filename, "rb") as file:
+                                            excel_data = file.read()
+                                        
+                                        # Create download button
+                                        download_filename = f"{project_name}_business_case.xlsx"
+                                        st.download_button(
+                                            label="💾 Download Excel File",
+                                            data=excel_data,
+                                            file_name=download_filename,
+                                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                        )
+                                    else:
+                                        st.error("❌ Failed to generate Excel file")
+                                        
+                                except Exception as e:
+                                    st.error(f"❌ Error generating Excel: {str(e)}")
+                        
+                        with col2:
+                            st.info("💡 **Tip**: This will generate an Excel version of your Business Case with proper formatting, merged cells, and organized sections including Initiative Purpose, OKRs, Implementation Plan, Dependencies, and Risks.")
+                    else:
+                        st.warning("⚠️ CSV file not found. Please ensure the Business Case has been generated with CSV export enabled.")
+                        
             except Exception as e:
                 st.error(f"Error reading markdown file: {e}")
 

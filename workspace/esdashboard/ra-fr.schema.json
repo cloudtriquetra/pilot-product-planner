@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "context": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Brief context summary (≤100 words)"
+    },
+    "userStories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^US-\\d+$",
+            "description": "User story identifier (e.g., US-1)"
+          },
+          "title": {
+            "type": "string",
+            "description": "User story title"
+          },
+          "asA": {
+            "type": "string",
+            "description": "As a <role>"
+          },
+          "iWantTo": {
+            "type": "string",
+            "description": "I want to <capability>"
+          },
+          "soThat": {
+            "type": "string",
+            "description": "So that <benefit>"
+          },
+          "storyPoints": {
+            "type": "integer",
+            "enum": [1, 2, 3, 5, 8, 13],
+            "description": "Story points estimation using Fibonacci sequence"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["Critical", "High", "Medium", "Low"],
+            "description": "Priority level"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Categorization tags (e.g., Frontend, Backend, API, Security)"
+          },
+          "relatedUserStories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^US-\\d+$"
+            },
+            "description": "Related user story references"
+          },
+          "epic": {
+            "type": "string",
+            "description": "Epic reference (optional)"
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^AC-\\d+$",
+                  "description": "Acceptance criteria identifier (e.g., AC-1)"
+                },
+                "given": {
+                  "type": "string",
+                  "description": "Given condition"
+                },
+                "when": {
+                  "type": "string",
+                  "description": "When action"
+                },
+                "then": {
+                  "type": "string",
+                  "description": "Then outcome"
+                }
+              },
+              "required": ["id", "given", "when", "then"],
+              "additionalProperties": false
+            },
+            "minItems": 2,
+            "maxItems": 5,
+            "description": "Acceptance criteria using Given/When/Then format"
+          }
+        },
+        "required": ["id", "title", "asA", "iWantTo", "soThat", "storyPoints", "priority", "tags", "acceptanceCriteria"],
+        "additionalProperties": false
+      }
+    },
+    "functionalRequirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^FR-\\d+$",
+            "description": "Functional requirement identifier (e.g., FR-1)"
+          },
+          "title": {
+            "type": "string",
+            "description": "Requirement title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed requirement description"
+          },
+          "relatedUserStories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^US-\\d+$"
+            },
+            "description": "Related user story references"
+          },
+          "inputs": {
+            "type": "string",
+            "description": "Required inputs"
+          },
+          "triggers": {
+            "type": "string",
+            "description": "Triggering events"
+          },
+          "mainFlow": {
+            "type": "string",
+            "description": "Main processing flow"
+          },
+          "outputs": {
+            "type": "string",
+            "description": "Expected outputs"
+          }
+        },
+        "required": ["id", "title", "description", "relatedUserStories"],
+        "additionalProperties": false
+      }
+    },
+    "errorAndEdgeCases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of error and edge cases"
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of assumptions"
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of open questions for stakeholders"
+    },
+    "traceability": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "requirementId": {
+            "type": "string",
+            "pattern": "^FR-\\d+$",
+            "description": "Functional requirement identifier"
+          },
+          "userStoryId": {
+            "type": "string",
+            "pattern": "^US-\\d+$",
+            "description": "User story identifier"
+          },
+          "acceptanceCriteriaIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^AC-\\d+$"
+            },
+            "description": "Acceptance criteria identifiers"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Additional notes"
+          }
+        },
+        "required": ["requirementId", "userStoryId", "acceptanceCriteriaIds", "notes"],
+        "additionalProperties": false
+      }
+    },
+    "ado": {
+      "type": "object",
+      "properties": {
+        "epics": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Recommended epic structure"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Feature-level groupings"
+        },
+        "tasksByUserStory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "userStoryId": {
+                "type": "string",
+                "pattern": "^US-\\d+$",
+                "description": "User story identifier"
+              },
+              "tasks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "List of tasks for this user story"
+              }
+            },
+            "required": ["userStoryId", "tasks"],
+            "additionalProperties": false
+          }
+        },
+        "definitionOfDone": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Definition of Done criteria"
+        },
+        "sprintPlanning": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Sprint planning considerations"
+        }
+      },
+      "required": ["epics", "features", "tasksByUserStory", "definitionOfDone", "sprintPlanning"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["context", "userStories", "functionalRequirements", "errorAndEdgeCases", "assumptions", "openQuestions", "traceability", "ado"],
+  "additionalProperties": false
+}
